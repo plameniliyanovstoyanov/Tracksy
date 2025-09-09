@@ -12,13 +12,13 @@ import {
 } from 'react-native';
 import { useAuth } from '@/stores/auth-store';
 import { useRouter } from 'expo-router';
-import { Mail, Chrome, Facebook, Zap } from 'lucide-react-native';
+import { Mail, Chrome, Facebook, Zap, Shield } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen() {
-  const { signInWithGoogle, signInWithApple, signInWithFacebook, loading } = useAuth();
+  const { signInWithGoogle, signInWithApple, signInWithFacebook, signInAsAdmin, loading } = useAuth();
   const router = useRouter();
   
   // Animation values for light trails
@@ -82,6 +82,11 @@ export default function LoginScreen() {
 
   const handleFacebookSignIn = async () => {
     await signInWithFacebook();
+    router.replace('/(tabs)');
+  };
+
+  const handleAdminSignIn = () => {
+    signInAsAdmin();
     router.replace('/(tabs)');
   };
 
@@ -206,6 +211,29 @@ export default function LoginScreen() {
               <View style={styles.buttonContent}>
                 <Facebook size={22} color="#00FF88" />
                 <Text style={styles.buttonText}>Влез с Facebook</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Admin Access Button */}
+            <View style={styles.dividerContainer}>
+              <View style={styles.divider} />
+              <Text style={styles.dividerText}>ИЛИ</Text>
+              <View style={styles.divider} />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, styles.adminButton]}
+              onPress={handleAdminSignIn}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['rgba(255,136,0,0.1)', 'rgba(255,136,0,0.05)']}
+                style={styles.buttonGradient}
+              />
+              <View style={styles.buttonContent}>
+                <Shield size={22} color="#FF8800" />
+                <Text style={[styles.buttonText, styles.adminButtonText]}>Продължи като Админ</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -340,5 +368,29 @@ const styles = StyleSheet.create({
     color: 'rgba(0,255,136,0.5)',
     letterSpacing: 2,
     fontWeight: '600' as const,
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 20,
+    gap: 12,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(136,136,136,0.2)',
+  },
+  dividerText: {
+    fontSize: 12,
+    color: '#666666',
+    letterSpacing: 1,
+    fontWeight: '600' as const,
+  },
+  adminButton: {
+    borderColor: 'rgba(255,136,0,0.2)',
+  },
+  adminButtonText: {
+    color: '#FFB366',
   },
 });

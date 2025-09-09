@@ -12,6 +12,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     // Get initial session
@@ -188,9 +189,43 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
 
 
+  const signInAsAdmin = () => {
+    // Create a mock admin session
+    const adminSession = {
+      access_token: 'admin-token',
+      token_type: 'bearer',
+      expires_in: 3600,
+      refresh_token: 'admin-refresh-token',
+      user: {
+        id: 'admin-user-id',
+        email: 'admin@speedtracker.app',
+        role: 'admin',
+        app_metadata: { provider: 'admin' },
+        user_metadata: { name: 'Admin User' },
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+      },
+    } as any;
+
+    setSession(adminSession);
+    setUser(adminSession.user);
+    setIsAdmin(true);
+    setLoading(false);
+  };
+
   const signOut = async () => {
     try {
       setLoading(true);
+      
+      // If admin, just clear local state
+      if (isAdmin) {
+        setSession(null);
+        setUser(null);
+        setIsAdmin(false);
+        setLoading(false);
+        return;
+      }
+      
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setSession(null);
@@ -211,9 +246,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     user,
     loading,
     isAuthenticated: !!session,
+    isAdmin,
     signInWithGoogle,
     signInWithApple,
     signInWithFacebook,
+    signInAsAdmin,
     signOut,
   };
 });
