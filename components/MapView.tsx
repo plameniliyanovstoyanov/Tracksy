@@ -105,6 +105,34 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
     }
   }, [location, hasInitiallyFocused]);
 
+  // Update routes after map loads
+  useEffect(() => {
+    if (routesLoaded && Object.keys(sectorRoutes).length > 0 && webViewRef.current) {
+      // Wait a bit for the map to be fully loaded
+      const timer = setTimeout(() => {
+        console.log('🎯 Injecting sector routes into map...');
+        const updateScript = `
+          console.log('📱 Received routes from React Native:', Object.keys(${JSON.stringify(sectorRoutes)}));
+          if (window.updateSectorRoutes) {
+            window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
+          } else {
+            console.log('❌ updateSectorRoutes function not available yet');
+            // Retry after a short delay
+            setTimeout(() => {
+              if (window.updateSectorRoutes) {
+                window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
+              }
+            }, 1000);
+          }
+          true;
+        `;
+        webViewRef.current?.injectJavaScript(updateScript);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [routesLoaded, sectorRoutes]);
+
   // Function to center map on user location
   const centerOnUserLocation = () => {
     if (location && webViewRef.current) {
@@ -275,15 +303,36 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         };
 
         map.on('load', () => {
+          console.log('🗺️ Map loaded, initializing sectors...');
           // Add sectors data
           const sectorsData = ${JSON.stringify(sectors)};
           
-          // Add source for sector lines - will be updated with real routes
+          // Create initial features with straight lines
+          const initialFeatures = sectorsData.map(sector => ({
+            'type': 'Feature',
+            'properties': {
+              'name': sector.name,
+              'route': sector.route,
+              'speedLimit': sector.speedLimit,
+              'distance': sector.distance,
+              'startKm': sector.startPoint.km || 0,
+              'endKm': sector.endPoint.km || 0
+            },
+            'geometry': {
+              'type': 'LineString',
+              'coordinates': [
+                [sector.startPoint.lng, sector.startPoint.lat],
+                [sector.endPoint.lng, sector.endPoint.lat]
+              ]
+            }
+          }));
+          
+          // Add source for sector lines with initial straight lines
           map.addSource('sectors', {
             'type': 'geojson',
             'data': {
               'type': 'FeatureCollection',
-              'features': []
+              'features': initialFeatures
             }
           });
 
@@ -369,6 +418,8 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           map.on('mouseleave', 'sectors-line', () => {
             map.getCanvas().style.cursor = '';
           });
+          
+          console.log('✅ Map initialization complete with ' + initialFeatures.length + ' sectors');
         });
       </script>
     </body>
@@ -399,23 +450,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           originWhitelist={['*']}
           mixedContentMode="compatibility"
           onLoadEnd={() => {
-            console.log('🌐 WebView loaded, routesLoaded:', routesLoaded, 'sectorRoutes keys:', Object.keys(sectorRoutes));
-            // Update routes after map loads
-            if (routesLoaded && Object.keys(sectorRoutes).length > 0) {
-              setTimeout(() => {
-                console.log('🚀 Injecting sector routes into map...');
-                const updateScript = `
-                  console.log('📱 Received routes from React Native:', Object.keys(${JSON.stringify(sectorRoutes)}));
-                  if (window.updateSectorRoutes) {
-                    window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
-                  } else {
-                    console.log('❌ updateSectorRoutes function not available yet');
-                  }
-                  true;
-                `;
-                webViewRef.current?.injectJavaScript(updateScript);
-              }, 1500);
-            }
+            console.log('🌐 WebView loaded');
           }}
         />
       )}
