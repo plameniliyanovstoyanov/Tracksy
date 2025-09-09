@@ -10,10 +10,10 @@ import {
 } from 'react-native';
 import { useAuth } from '@/stores/auth-store';
 import { useRouter } from 'expo-router';
-import { Mail, Chrome, Github } from 'lucide-react-native';
+import { Mail, Chrome, Facebook } from 'lucide-react-native';
 
 export default function LoginScreen() {
-  const { signInWithGoogle, signInWithApple, signInWithFacebook, signInWithGithub, loading } = useAuth();
+  const { signInWithGoogle, signInWithApple, signInWithFacebook, loading } = useAuth();
   const router = useRouter();
 
   const handleGoogleSignIn = async () => {
@@ -31,10 +31,7 @@ export default function LoginScreen() {
     router.replace('/(tabs)');
   };
 
-  const handleGithubSignIn = async () => {
-    await signInWithGithub();
-    router.replace('/(tabs)');
-  };
+
 
   if (loading) {
     return (
@@ -78,26 +75,12 @@ export default function LoginScreen() {
             onPress={handleFacebookSignIn}
             disabled={loading}
           >
-            <Mail size={24} color="#fff" />
+            <Facebook size={24} color="#fff" />
             <Text style={styles.buttonText}>Влез с Facebook</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.githubButton]}
-            onPress={handleGithubSignIn}
-            disabled={loading}
-          >
-            <Github size={24} color="#fff" />
-            <Text style={styles.buttonText}>Влез с GitHub</Text>
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={styles.skipButton}
-          onPress={() => router.replace('/(tabs)')}
-        >
-          <Text style={styles.skipText}>Продължи без профил</Text>
-        </TouchableOpacity>
+
       </View>
     </SafeAreaView>
   );
@@ -152,20 +135,11 @@ const styles = StyleSheet.create({
   facebookButton: {
     backgroundColor: '#1877F2',
   },
-  githubButton: {
-    backgroundColor: '#24292e',
-  },
+
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600' as const,
   },
-  skipButton: {
-    marginTop: 30,
-    alignItems: 'center',
-  },
-  skipText: {
-    color: '#007AFF',
-    fontSize: 16,
-  },
+
 });
