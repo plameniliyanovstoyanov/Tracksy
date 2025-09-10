@@ -348,12 +348,12 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             'paint': {
               'line-color': [
                 'case',
-                ['==', ['get', 'route'], 'А1 Тракия'], '#ff6b6b',
-                ['==', ['get', 'route'], 'А2 Хемус'], '#4ecdc4',
-                ['==', ['get', 'route'], 'А3 Струма'], '#45b7d1',
+                ['==', ['get', 'route'], 'АМ "Тракия"'], '#ff6b6b',
+                ['==', ['get', 'route'], 'АМ "Хемус"'], '#4ecdc4',
+                ['==', ['get', 'route'], 'АМ "Струма"'], '#45b7d1',
                 ['==', ['get', 'route'], 'Северна тангента'], '#f7b731',
                 ['==', ['get', 'route'], 'Път I-1'], '#5f27cd',
-                ['==', ['get', 'route'], 'Булевард Европа'], '#e74c3c',
+                ['==', ['get', 'route'], 'Тест'], '#00ff88',
                 '#ffaa00'
               ],
               'line-width': 4,
