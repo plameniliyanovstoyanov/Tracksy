@@ -353,6 +353,9 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
                 ['==', ['get', 'route'], 'АМ "Струма"'], '#45b7d1',
                 ['==', ['get', 'route'], 'Северна тангента'], '#f7b731',
                 ['==', ['get', 'route'], 'Път I-1'], '#5f27cd',
+                ['==', ['get', 'route'], 'Път I-2'], '#fd79a8',
+                ['==', ['get', 'route'], 'Път I-3'], '#a29bfe',
+                ['==', ['get', 'route'], 'Път I-4'], '#ffeaa7',
                 ['==', ['get', 'route'], 'Тест'], '#00ff88',
                 '#ffaa00'
               ],
