@@ -10,19 +10,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Gauge } from 'lucide-react-native';
 import { sectors } from '@/data/sectors';
-import { useSectorStore } from '@/stores/sector-store';
+
 
 export default function SectorsScreen() {
-  const { sectorHistory } = useSectorStore();
   const insets = useSafeAreaInsets();
 
   const formatDistance = (distance: number) => {
     return `${distance.toFixed(1)} км`;
   };
 
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString('bg-BG');
-  };
+
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -72,38 +69,7 @@ export default function SectorsScreen() {
             ))}
           </View>
 
-          {sectorHistory.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>История</Text>
-              {sectorHistory.slice(0, 10).map((entry, index) => (
-                <View key={index} style={styles.historyCard}>
-                  <LinearGradient
-                    colors={['#2a2a2a', '#1a1a1a']}
-                    style={styles.cardGradient}
-                  >
-                    <View style={styles.historyHeader}>
-                      <Text style={styles.historyName}>{entry.sectorName}</Text>
-                      <Text style={styles.historyTime}>
-                        {formatTime(entry.timestamp)}
-                      </Text>
-                    </View>
-                    
-                    <View style={styles.historyDetails}>
-                      <Text style={styles.historySpeed}>
-                        Средна скорост: {entry.averageSpeed.toFixed(1)} км/ч
-                      </Text>
-                      <Text style={[
-                        styles.historyStatus,
-                        { color: entry.exceeded ? '#ff4444' : '#00ff88' }
-                      ]}>
-                        {entry.exceeded ? 'Превишена' : 'В норма'}
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </View>
-              ))}
-            </View>
-          )}
+
         </ScrollView>
       </LinearGradient>
     </View>
@@ -151,11 +117,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
-  historyCard: {
-    marginBottom: 8,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
+
   cardGradient: {
     padding: 16,
   },
@@ -210,33 +172,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  historyName: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
-  historyTime: {
-    color: '#888',
-    fontSize: 11,
-  },
-  historyDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  historySpeed: {
-    color: '#aaa',
-    fontSize: 12,
-  },
-  historyStatus: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
+
 });
