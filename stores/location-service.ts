@@ -196,9 +196,9 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           warnedSectors: []
         };
         
-        // Дебаунсинг - не проверяваме твърде често
+        // Намален дебаунсинг за максимална точност
         const now = Date.now();
-        if (now - trackingState.lastCheckTime < 1000) { // Минимум 1 секунда между проверките
+        if (now - trackingState.lastCheckTime < 250) { // Минимум 0.25 секунди между проверките за максимална точност
           return;
         }
         trackingState.lastCheckTime = now;
@@ -505,7 +505,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           await AsyncStorage.setItem('sector-tracking-state', JSON.stringify(trackingState));
         }
 
-        console.log(`Background location: ${location.coords.latitude}, ${location.coords.longitude}, Speed: ${speed.toFixed(1)} km/h`);
+        console.log(`🚀 MAX ACCURACY GPS: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}, Speed: ${speed.toFixed(1)} km/h, Accuracy: ${location.coords.accuracy?.toFixed(1)}m`);
       } catch (error) {
         console.error('Error processing background location:', error);
       }
@@ -519,12 +519,25 @@ export class BackgroundLocationService {
   static async checkBatteryOptimization(): Promise<void> {
     try {
       if (Platform.OS === 'android') {
-        // Показваме известие с инструкции за battery optimization
+        // Показваме КРИТИЧНО известие за battery optimization
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: '🔋 Важно: Изключете Battery Optimization',
-            body: 'За стабилна работа в background:\n1. Настройки → Приложения → Speed Tracker → Батерия\n2. Изберете "Не оптимизирай"\n3. Рестартирайте приложението',
-            data: { type: 'battery-optimization-info' },
+            title: '🚨 КРИТИЧНО: Изключете Battery Optimization',
+            body: 'За МАКСИМАЛНА точност на GPS и стабилна работа в background:\n\n1. Настройки → Приложения → Speed Tracker\n2. Батерия → "Не оптимизирай"\n3. Автостарт → ВКЛЮЧЕН\n4. Рестартирайте приложението\n\nБЕЗ ТОВА GPS НЯМА ДА РАБОТИ ПРАВИЛНО!',
+            data: { type: 'battery-optimization-critical' },
+            sound: true,
+            priority: 'max',
+            sticky: true,
+          },
+          trigger: null,
+        });
+      } else if (Platform.OS === 'ios') {
+        // За iOS също показваме инструкции
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🍎 iOS: Настройки за максимална точност',
+            body: 'За най-добра работа на GPS:\n\n1. Настройки → Конфиденциалност → Местоположение → Speed Tracker → "Винаги"\n2. Настройки → Батерия → Без ограничения за Speed Tracker\n3. Включете "Точно местоположение"',
+            data: { type: 'ios-optimization-info' },
             sound: true,
             priority: 'high',
           },
@@ -546,19 +559,23 @@ export class BackgroundLocationService {
       // Показваме информация за battery optimization
       await this.checkBatteryOptimization();
 
-      // Проверяваме разрешения
+      // ВИНАГИ изискваме максимални разрешения
+      console.log('🔐 Requesting ALWAYS location permissions for maximum GPS accuracy...');
+      
+      // Първо искаме foreground разрешение
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       if (foregroundStatus !== 'granted') {
         console.log('❌ Foreground location permission not granted');
         
-        // Показваме известие за грешката
+        // Показваме критично известие
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: '⚠️ Нужно е разрешение за местоположение',
-            body: 'Моля, разрешете достъп до местоположението в настройките на устройството.',
-            data: { type: 'permission-error' },
+            title: '🚨 КРИТИЧНО: Нужно е разрешение за местоположение',
+            body: 'Приложението НЕ МОЖЕ да работи без достъп до местоположението. Моля, разрешете достъп в настройките на устройството и рестартирайте приложението.',
+            data: { type: 'permission-error-critical' },
             sound: true,
-            priority: 'high',
+            priority: 'max',
+            sticky: true,
           },
           trigger: null,
         });
@@ -566,24 +583,28 @@ export class BackgroundLocationService {
         return false;
       }
 
+      // След това ЗАДЪЛЖИТЕЛНО искаме background разрешение (винаги)
       const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
       if (backgroundStatus !== 'granted') {
-        console.log('❌ Background location permission not granted');
+        console.log('❌ Background location permission not granted - CRITICAL ERROR');
         
-        // Показваме известие с инструкции
+        // Показваме критично известие с детайлни инструкции
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: '⚠️ Нужно е разрешение за background местоположение',
-            body: 'За да работи в background, отидете в Настройки → Приложения → Speed Tracker → Разрешения → Местоположение → "Винаги разрешено"',
-            data: { type: 'background-permission-error' },
+            title: '🚨 КРИТИЧНО: Нужно е "ВИНАГИ" разрешение за местоположение',
+            body: 'За максимална точност на GPS и работа в background:\n\n📱 Android:\n1. Настройки → Приложения → Speed Tracker\n2. Разрешения → Местоположение\n3. Изберете "Винаги разрешено"\n\n🍎 iOS:\n1. Настройки → Конфиденциалност → Местоположение\n2. Speed Tracker → "Винаги"\n\nБЕЗ ТОВА ПРИЛОЖЕНИЕТО НЯМА ДА РАБОТИ ПРАВИЛНО!',
+            data: { type: 'background-permission-critical' },
             sound: true,
-            priority: 'high',
+            priority: 'max',
+            sticky: true,
           },
           trigger: null,
         });
         
         return false;
       }
+      
+      console.log('✅ All location permissions granted - proceeding with maximum accuracy GPS tracking');
 
       // Проверяваме дали вече работи
       const isTaskRunning = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
@@ -593,19 +614,25 @@ export class BackgroundLocationService {
         return true;
       }
 
-      // Стартираме background location tracking
+      // Стартираме background location tracking с максимална точност
       try {
         await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-          accuracy: Location.Accuracy.BestForNavigation, // Винаги максимална точност
-          timeInterval: 500, // 0.5 секунди за максимална точност
-          distanceInterval: 1, // 1 метър за максимална точност
-          deferredUpdatesInterval: 1000,
+          accuracy: Location.Accuracy.BestForNavigation, // МАКСИМАЛНА точност GPS - най-високо качество
+          timeInterval: 100, // 0.1 секунди за МАКСИМАЛНА честота на обновления
+          distanceInterval: 0.1, // 0.1 метра за МАКСИМАЛНА чувствителност
+          deferredUpdatesInterval: 250, // Много чести обновления за максимална точност
+          mayShowUserSettingsDialog: true, // Показва диалог за настройки ако е нужно
+          pausesUpdatesAutomatically: false, // НИКОГА не спира автоматично
+          showsBackgroundLocationIndicator: true, // Показва индикатор че работи в background
           foregroundService: {
-            notificationTitle: '🚗 Speed Tracker активен',
-            notificationBody: '📍 Следи скоростта в реално време (макс. точност)',
-            notificationColor: '#00ff88',
+            notificationTitle: '🚗 Speed Tracker - МАКСИМАЛНА ТОЧНОСТ GPS',
+            notificationBody: '📍 Следи с най-висока точност • Background режим • Винаги активен • Изключена battery optimization',
+            notificationColor: '#ff6b35',
+            killServiceOnDestroy: false, // НИКОГА не спира сервиса при затваряне
           },
         });
+        
+        console.log('🚀 Background location tracking started with MAXIMUM GPS accuracy settings');
       } catch (locationError: any) {
         console.error('Location service error:', locationError);
         
@@ -632,10 +659,22 @@ export class BackgroundLocationService {
       }
 
       this.isRunning = true;
-      console.log('Background location tracking started');
+      console.log('✅ Background location tracking started with MAXIMUM accuracy');
       
-      // Показваме persistent notification
+      // Показваме persistent notification за максимална точност
       await this.showBackgroundNotification();
+      
+      // Показваме успешно известие
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '✅ Speed Tracker стартиран успешно',
+          body: '🚀 Работи с максимална точност на GPS\n📍 Background режим активен\n🔋 Препоръчваме да изключите battery optimization',
+          data: { type: 'tracking-started-success' },
+          sound: true,
+          priority: 'high',
+        },
+        trigger: null,
+      });
       
       return true;
     } catch (error) {
@@ -685,11 +724,12 @@ export class BackgroundLocationService {
       await Notifications.scheduleNotificationAsync({
         identifier: BACKGROUND_NOTIFICATION_ID,
         content: {
-          title: '🚗 Speed Tracker работи в background',
-          body: '📍 Следи за сектори за средна скорост',
-          data: { persistent: true },
+          title: '🚗 Speed Tracker - МАКСИМАЛНА ТОЧНОСТ',
+          body: '📍 GPS следене с най-висока точност • Background режим активен • Винаги работи',
+          data: { persistent: true, maxAccuracy: true },
           sticky: true,
           autoDismiss: false,
+          priority: 'high',
         },
         trigger: null,
       });

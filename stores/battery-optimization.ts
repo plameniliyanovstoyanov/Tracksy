@@ -1,6 +1,7 @@
 import * as Battery from 'expo-battery';
 import * as Location from 'expo-location';
-import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import { Platform, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { combine } from 'zustand/middleware';
@@ -18,6 +19,9 @@ interface BatteryActions {
   updateBatteryLevel: (level: number) => void;
   setAdaptiveMode: (enabled: boolean) => void; // Винаги ще връща максимална точност
   getOptimalLocationSettings: () => { interval: number; accuracy: Location.LocationAccuracy };
+  requestBatteryOptimizationDisable: () => Promise<void>;
+  showBatteryOptimizationInstructions: () => Promise<void>;
+  requestAlwaysLocationPermission: () => Promise<boolean>;
 }
 
 const BATTERY_THRESHOLDS = {
@@ -138,6 +142,107 @@ export const useBatteryOptimization = create(
       getOptimalLocationSettings: () => {
         // Винаги връщаме максимална точност
         return LOCATION_SETTINGS.MAX_ACCURACY;
+      },
+
+      requestBatteryOptimizationDisable: async () => {
+        try {
+          if (Platform.OS === 'android') {
+            // Показваме детайлни инструкции за изключване на battery optimization
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: '🔋 ВАЖНО: Изключете Battery Optimization',
+                body: 'За максимална точност на GPS:\n\n1. Настройки → Приложения\n2. Speed Tracker → Батерия\n3. "Не оптимизирай"\n4. Рестартирайте приложението\n\nБез това приложението няма да работи правилно в background!',
+                data: { type: 'battery-optimization-critical' },
+                sound: true,
+                priority: 'max',
+                sticky: true,
+              },
+              trigger: null,
+            });
+
+            // Опитваме се да отворим настройките за battery optimization
+            try {
+              await Linking.openSettings();
+            } catch (linkError) {
+              console.log('Could not open settings automatically');
+            }
+          }
+        } catch (error) {
+          console.error('Failed to request battery optimization disable:', error);
+        }
+      },
+
+      showBatteryOptimizationInstructions: async () => {
+        try {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '⚡ Максимална производителност',
+              body: 'За най-добра работа:\n\n📱 Android:\n• Настройки → Батерия → Не оптимизирай\n• Настройки → Приложения → Автостарт: ВКЛ\n\n🍎 iOS:\n• Настройки → Конфиденциалност → Винаги разрешено\n• Настройки → Батерия → Без ограничения',
+              data: { type: 'performance-instructions' },
+              sound: false,
+              priority: 'high',
+            },
+            trigger: null,
+          });
+        } catch (error) {
+          console.error('Failed to show battery optimization instructions:', error);
+        }
+      },
+
+      requestAlwaysLocationPermission: async () => {
+        try {
+          if (Platform.OS === 'web') {
+            console.log('Location permissions not applicable on web');
+            return false;
+          }
+
+          // Първо искаме foreground разрешение
+          const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+          if (foregroundStatus !== 'granted') {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: '📍 Нужно е разрешение за местоположение',
+                body: 'Моля, разрешете достъп до местоположението за да работи приложението.',
+                data: { type: 'location-permission-required' },
+                sound: true,
+                priority: 'high',
+              },
+              trigger: null,
+            });
+            return false;
+          }
+
+          // След това искаме background разрешение (винаги)
+          const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+          if (backgroundStatus !== 'granted') {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: '🔄 Нужно е разрешение за background местоположение',
+                body: 'За работа в background:\n\n📱 Android: Настройки → Приложения → Speed Tracker → Разрешения → Местоположение → "Винаги разрешено"\n\n🍎 iOS: Настройки → Конфиденциалност → Местоположение → Speed Tracker → "Винаги"',
+                data: { type: 'background-location-required' },
+                sound: true,
+                priority: 'max',
+                sticky: true,
+              },
+              trigger: null,
+            });
+            
+            // Опитваме се да отворим настройките
+            try {
+              await Linking.openSettings();
+            } catch (linkError) {
+              console.log('Could not open settings automatically');
+            }
+            
+            return false;
+          }
+
+          console.log('✅ All location permissions granted');
+          return true;
+        } catch (error) {
+          console.error('Failed to request location permissions:', error);
+          return false;
+        }
       },
     } as BatteryActions)
   )
