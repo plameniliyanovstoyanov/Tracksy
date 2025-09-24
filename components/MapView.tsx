@@ -18,6 +18,8 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
   const [routesLoaded, setRoutesLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasInitiallyFocused, setHasInitiallyFocused] = useState(false);
+  const [lastCenterTime, setLastCenterTime] = useState(0);
+  const [previousLocation, setPreviousLocation] = useState<Location.LocationObject | null>(null);
 
   // Load sector routes
   useEffect(() => {
@@ -86,10 +88,33 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
     });
   }, []);
 
-  // Update location on the map and center on first location
+  // Update location on the map and handle automatic centering
   useEffect(() => {
     if (location && webViewRef.current) {
-      const shouldCenter = !hasInitiallyFocused;
+      const currentTime = Date.now();
+      let shouldCenter = !hasInitiallyFocused;
+      
+      // Check if user is moving and enough time has passed for auto-centering
+      if (hasInitiallyFocused && previousLocation) {
+        const distance = calculateDistance(
+          previousLocation.coords.latitude,
+          previousLocation.coords.longitude,
+          location.coords.latitude,
+          location.coords.longitude
+        );
+        
+        // If user moved more than 50 meters and 10 seconds passed, auto-center
+        const timeSinceLastCenter = currentTime - lastCenterTime;
+        const isMoving = distance > 50; // 50 meters
+        const shouldAutoCenter = isMoving && timeSinceLastCenter > 10000; // 10 seconds
+        
+        if (shouldAutoCenter) {
+          shouldCenter = true;
+          setLastCenterTime(currentTime);
+          console.log('🚗 Auto-centering map - user is moving:', distance.toFixed(0), 'meters');
+        }
+      }
+      
       const updateScript = `
         if (window.updateUserLocation) {
           window.updateUserLocation(${location.coords.longitude}, ${location.coords.latitude}, ${shouldCenter});
@@ -100,10 +125,13 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
       
       if (!hasInitiallyFocused) {
         setHasInitiallyFocused(true);
+        setLastCenterTime(currentTime);
         console.log('🎯 Centering map on user location for the first time');
       }
+      
+      setPreviousLocation(location);
     }
-  }, [location, hasInitiallyFocused]);
+  }, [location, hasInitiallyFocused, previousLocation, lastCenterTime]);
 
   // Update routes after map loads
   useEffect(() => {
@@ -133,10 +161,27 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
     }
   }, [routesLoaded, sectorRoutes]);
 
+  // Function to calculate distance between two coordinates
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI/180;
+    const φ2 = lat2 * Math.PI/180;
+    const Δφ = (lat2-lat1) * Math.PI/180;
+    const Δλ = (lon2-lon1) * Math.PI/180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c; // Distance in meters
+  };
+
   // Function to center map on user location
   const centerOnUserLocation = () => {
     if (location && webViewRef.current) {
       console.log('🎯 Manually centering map on user location');
+      setLastCenterTime(Date.now()); // Reset auto-center timer
       const centerScript = `
         if (window.centerOnUser) {
           window.centerOnUser();
