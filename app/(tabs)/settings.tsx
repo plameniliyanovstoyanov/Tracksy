@@ -368,6 +368,37 @@ export default function SettingsScreen() {
                 🚨 <Text style={styles.boldText}>Превишена скорост:</Text> Автоматични предупреждения при превишена скорост.
               </Text>
             </View>
+            
+            <View style={[styles.infoBox, { marginTop: 16, borderColor: '#ff4444' }]}>
+              <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 12, color: '#ff4444' }]}>⚠️ Ако background режимът не работи:</Text>
+              
+              <Text style={styles.infoText}>
+                <Text style={styles.boldText}>Android:</Text>
+              </Text>
+              <Text style={[styles.infoText, { marginLeft: 16, marginBottom: 8 }]}>
+                1. Настройки → Приложения → Speed Tracker → Разрешения → Местоположение → &quot;Винаги разрешено&quot;
+              </Text>
+              <Text style={[styles.infoText, { marginLeft: 16, marginBottom: 8 }]}>
+                2. Настройки → Приложения → Speed Tracker → Батерия → &quot;Не оптимизирай&quot;
+              </Text>
+              <Text style={[styles.infoText, { marginLeft: 16, marginBottom: 12 }]}>
+                3. Рестартирайте приложението
+              </Text>
+              
+              <Text style={styles.infoText}>
+                <Text style={styles.boldText}>iOS:</Text>
+              </Text>
+              <Text style={[styles.infoText, { marginLeft: 16, marginBottom: 8 }]}>
+                1. Settings → Privacy & Security → Location Services → Speed Tracker → &quot;Always&quot;
+              </Text>
+              <Text style={[styles.infoText, { marginLeft: 16, marginBottom: 8 }]}>
+                2. Settings → General → Background App Refresh → включете за приложението
+              </Text>
+              
+              <Text style={[styles.infoText, { marginTop: 12, color: '#ffaa44' }]}>
+                💡 <Text style={styles.boldText}>Забележка:</Text> В Expo Go background режимът има ограничения. За пълна функционалност се изисква standalone build.
+              </Text>
+            </View>
           </View>
 
           <View style={styles.disclaimer}>

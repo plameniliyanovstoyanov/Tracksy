@@ -516,6 +516,26 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 export class BackgroundLocationService {
   private static isRunning = false;
 
+  static async checkBatteryOptimization(): Promise<void> {
+    try {
+      if (Platform.OS === 'android') {
+        // Показваме известие с инструкции за battery optimization
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🔋 Важно: Изключете Battery Optimization',
+            body: 'За стабилна работа в background:\n1. Настройки → Приложения → Speed Tracker → Батерия\n2. Изберете "Не оптимизирай"\n3. Рестартирайте приложението',
+            data: { type: 'battery-optimization-info' },
+            sound: true,
+            priority: 'high',
+          },
+          trigger: null,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to show battery optimization info:', error);
+    }
+  }
+
   static async startBackgroundLocationTracking(): Promise<boolean> {
     try {
       if (Platform.OS === 'web') {
@@ -523,16 +543,45 @@ export class BackgroundLocationService {
         return false;
       }
 
+      // Показваме информация за battery optimization
+      await this.checkBatteryOptimization();
+
       // Проверяваме разрешения
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       if (foregroundStatus !== 'granted') {
-        console.log('Foreground location permission not granted');
+        console.log('❌ Foreground location permission not granted');
+        
+        // Показваме известие за грешката
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '⚠️ Нужно е разрешение за местоположение',
+            body: 'Моля, разрешете достъп до местоположението в настройките на устройството.',
+            data: { type: 'permission-error' },
+            sound: true,
+            priority: 'high',
+          },
+          trigger: null,
+        });
+        
         return false;
       }
 
       const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
       if (backgroundStatus !== 'granted') {
-        console.log('Background location permission not granted');
+        console.log('❌ Background location permission not granted');
+        
+        // Показваме известие с инструкции
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '⚠️ Нужно е разрешение за background местоположение',
+            body: 'За да работи в background, отидете в Настройки → Приложения → Speed Tracker → Разрешения → Местоположение → "Винаги разрешено"',
+            data: { type: 'background-permission-error' },
+            sound: true,
+            priority: 'high',
+          },
+          trigger: null,
+        });
+        
         return false;
       }
 
