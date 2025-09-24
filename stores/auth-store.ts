@@ -1,5 +1,5 @@
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
 import { supabase, getRedirectUrl } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
@@ -13,19 +13,126 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState(false);
+
+  // Generate or get device ID
+  const generateDeviceId = useCallback(async (): Promise<string> => {
+    try {
+      // Check if we already have a stored device ID
+      const stored = localStorage?.getItem('device_id') || null;
+      if (stored) {
+        return stored;
+      }
+
+      // Generate new device ID
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substr(2, 9);
+      const platform = Platform.OS;
+      
+      const uniqueId = `${platform}_${timestamp}_${random}`;
+      
+      // Store the generated ID
+      try {
+        localStorage?.setItem('device_id', uniqueId);
+      } catch (e) {
+        console.warn('Could not store device ID:', e);
+      }
+      
+      return uniqueId;
+    } catch (error) {
+      console.error('Error generating device ID:', error);
+      // Fallback to timestamp + random
+      return `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+  }, []);
+
+  // Create anonymous user in database
+  const createAnonymousUser = useCallback(async (deviceId: string) => {
+    if (!deviceId?.trim()) {
+      console.error('Invalid device ID provided');
+      return null;
+    }
+    
+    try {
+      const { data, error } = await supabase
+        .from('anonymous_users')
+        .upsert({
+          device_id: deviceId,
+          created_at: new Date().toISOString(),
+          last_seen: new Date().toISOString(),
+          device_info: {
+            platform: Platform.OS,
+            device_name: Platform.OS === 'web' ? 'Web Browser' : 'Mobile Device',
+            os_version: Platform.OS === 'web' ? (typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown') : 'Unknown',
+            brand: Platform.OS === 'web' ? 'Web' : 'Mobile'
+          }
+        }, {
+          onConflict: 'device_id'
+        })
+        .select()
+        .single();
+
+      if (error && error.code !== '23505') {
+        console.error('Error creating anonymous user:', error);
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Error in createAnonymousUser:', error);
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    const initializeAuth = async () => {
+      try {
+        // First, try to get authenticated session
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          // User is authenticated
+          setSession(session);
+          setUser(session.user);
+          setIsAnonymous(false);
+        } else {
+          // No authenticated user, create anonymous session
+          const generatedDeviceId = await generateDeviceId();
+          setDeviceId(generatedDeviceId);
+          
+          // Create anonymous user record in database
+          await createAnonymousUser(generatedDeviceId);
+          setIsAnonymous(true);
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+        // Fallback to anonymous mode
+        const generatedDeviceId = await generateDeviceId();
+        setDeviceId(generatedDeviceId);
+        setIsAnonymous(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        setSession(session);
+        setUser(session.user);
+        setIsAnonymous(false);
+        setDeviceId(null);
+      } else {
+        setSession(null);
+        setUser(null);
+        // Switch back to anonymous mode
+        const generatedDeviceId = await generateDeviceId();
+        setDeviceId(generatedDeviceId);
+        await createAnonymousUser(generatedDeviceId);
+        setIsAnonymous(true);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -241,12 +348,38 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   };
 
+  // Get current user identifier (either user ID or device ID)
+  const getCurrentUserId = (): string | null => {
+    if (user?.id) {
+      return user.id;
+    }
+    return deviceId;
+  };
+
+  // Update last seen for anonymous users
+  const updateLastSeen = async () => {
+    if (isAnonymous && deviceId) {
+      try {
+        await supabase
+          .from('anonymous_users')
+          .update({ last_seen: new Date().toISOString() })
+          .eq('device_id', deviceId);
+      } catch (error) {
+        console.error('Error updating last seen:', error);
+      }
+    }
+  };
+
   return {
     session,
     user,
     loading,
     isAuthenticated: !!session,
     isAdmin,
+    isAnonymous,
+    deviceId,
+    getCurrentUserId,
+    updateLastSeen,
     signInWithGoogle,
     signInWithApple,
     signInWithFacebook,

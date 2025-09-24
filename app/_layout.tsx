@@ -12,6 +12,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SpeedMonitorOverlay } from "@/components/SpeedMonitorOverlay";
 import { AppState, AppStateStatus, StyleSheet, Platform } from 'react-native';
 import { AuthProvider, useAuth } from "@/stores/auth-store";
+import { DeviceProvider } from "@/stores/device-store";
+import { ViolationHistoryProvider } from "@/stores/violation-history-store";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -226,14 +228,18 @@ export default function RootLayout() {
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <GestureHandlerRootView style={styles.container}>
-            <RootLayoutNav />
-            <SpeedMonitorOverlay
-              visible={monitorVisible}
-              onClose={handleCloseMonitor}
-              data={monitorData}
-            />
-          </GestureHandlerRootView>
+          <DeviceProvider>
+            <ViolationHistoryProvider>
+              <GestureHandlerRootView style={styles.container}>
+                <RootLayoutNav />
+                <SpeedMonitorOverlay
+                  visible={monitorVisible}
+                  onClose={handleCloseMonitor}
+                  data={monitorData}
+                />
+              </GestureHandlerRootView>
+            </ViolationHistoryProvider>
+          </DeviceProvider>
         </AuthProvider>
       </QueryClientProvider>
     </trpc.Provider>

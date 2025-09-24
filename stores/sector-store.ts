@@ -4,6 +4,7 @@ import { sectors as initialSectors, Sector } from '@/data/sectors';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { fetchSectorRoute } from '@/utils/mapbox-directions';
+import { trpcClient } from '@/lib/trpc';
 
 interface Location {
   latitude: number;
@@ -47,12 +48,13 @@ interface SectorState {
 interface SectorActions {
   initializeNotifications: () => Promise<void>;
   checkSectorEntry: (location: Location) => void;
-  checkSectorExit: (location: Location) => void;
+  checkSectorExit: (location: Location, deviceId?: string) => void;
   updateSectorSpeed: (speed: number) => void;
   updateSectorProgress: (location: Location) => void;
   loadSectorRoutes: () => Promise<void>;
   loadFromStorage: () => Promise<void>;
   addToHistory: (entry: SectorHistoryEntry) => void;
+  saveViolationToDatabase: (entry: SectorHistoryEntry, location: Location, deviceId: string) => Promise<void>;
 }
 
 // Функция за изчисляване на разстояние между две точки
@@ -274,7 +276,7 @@ export const useSectorStore = create(
         }
       },
 
-      checkSectorExit: (location: Location) => {
+      checkSectorExit: (location: Location, deviceId?: string) => {
         const state = get();
         const { currentSector, currentSectorAverageSpeed, exitConfirmationCount, lastSectorCheckTime } = state;
         
@@ -318,6 +320,14 @@ export const useSectorStore = create(
               exceeded,
               duration
             };
+            
+            // Записваме в базата данни ако имаме device ID
+            if (deviceId) {
+              const actions = get() as SectorState & SectorActions;
+              actions.saveViolationToDatabase(historyEntry, location, deviceId).catch(error => {
+                console.error('Failed to save violation to database:', error);
+              });
+            }
             
             if (Platform.OS !== 'web') {
               Notifications.scheduleNotificationAsync({
@@ -580,6 +590,40 @@ export const useSectorStore = create(
         set({ 
           sectorHistory: [entry, ...sectorHistory].slice(0, 50) // Keep last 50 entries
         });
+      },
+      
+      saveViolationToDatabase: async (entry: SectorHistoryEntry, location: Location, deviceId: string) => {
+        try {
+          console.log('Saving violation to database:', {
+            deviceId,
+            sectorId: entry.sectorId,
+            sectorName: entry.sectorName,
+            speedLimit: entry.speedLimit,
+            currentSpeed: entry.averageSpeed,
+            violationType: entry.exceeded ? 'speeding' : 'normal',
+            location,
+            timestamp: new Date(entry.timestamp).toISOString(),
+          });
+          
+          const result = await trpcClient.violations.save.mutate({
+            device_id: deviceId,
+            sector_id: entry.sectorId,
+            sector_name: entry.sectorName,
+            speed_limit: entry.speedLimit,
+            current_speed: entry.averageSpeed,
+            violation_type: entry.exceeded ? 'speeding' : 'normal',
+            location: {
+              latitude: location.latitude,
+              longitude: location.longitude,
+            },
+            timestamp: new Date(entry.timestamp).toISOString(),
+          });
+          
+          console.log('Violation saved successfully:', result);
+        } catch (error) {
+          console.error('Error saving violation to database:', error);
+          // Don't throw error to avoid breaking the app flow
+        }
       },
     } as SectorActions)
   )

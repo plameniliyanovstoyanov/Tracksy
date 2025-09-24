@@ -340,6 +340,60 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                 console.log(`Exited sector ${exitingSector.name} with avg speed ${avgSpeed.toFixed(1)} km/h`);
               }
               
+              // Записваме нарушението в базата данни ако имаме device ID
+              try {
+                // Първо проверяваме за device ID в localStorage (за web) или го генерираме
+                let deviceId = null;
+                
+                if (Platform.OS === 'web') {
+                  try {
+                    deviceId = localStorage?.getItem('device_id');
+                    if (!deviceId) {
+                      const timestamp = Date.now();
+                      const random = Math.random().toString(36).substr(2, 9);
+                      deviceId = `web_${timestamp}_${random}`;
+                      localStorage?.setItem('device_id', deviceId);
+                    }
+                  } catch (e) {
+                    // Fallback ако localStorage не работи
+                    deviceId = `web_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                  }
+                } else {
+                  // За mobile устройства искаме от AsyncStorage
+                  deviceId = await AsyncStorage.getItem('device_id');
+                  if (!deviceId) {
+                    const timestamp = Date.now();
+                    const random = Math.random().toString(36).substr(2, 9);
+                    deviceId = `${Platform.OS}_${timestamp}_${random}`;
+                    await AsyncStorage.setItem('device_id', deviceId);
+                  }
+                }
+                
+                if (deviceId && exitingSector) {
+                  // Импортираме trpcClient динамично за да избегнем circular dependencies
+                  const { trpcClient } = await import('@/lib/trpc');
+                  
+                  await trpcClient.violations.save.mutate({
+                    device_id: deviceId,
+                    sector_id: exitingSector.id,
+                    sector_name: exitingSector.name,
+                    speed_limit: exitingSector.speedLimit,
+                    current_speed: avgSpeed,
+                    violation_type: avgSpeed > exitingSector.speedLimit ? 'speeding' : 'normal',
+                    location: {
+                      latitude: location.coords.latitude,
+                      longitude: location.coords.longitude,
+                    },
+                    timestamp: new Date().toISOString(),
+                  });
+                  
+                  console.log('Violation saved to database successfully');
+                }
+              } catch (dbError) {
+                console.error('Failed to save violation to database:', dbError);
+                // Don't throw error to avoid breaking the flow
+              }
+              
               // Изчистваме данните
               await AsyncStorage.removeItem('current-sector');
               await AsyncStorage.removeItem('sector-entry-time');
