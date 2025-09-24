@@ -10,7 +10,7 @@ interface MapViewComponentProps {
   location: Location.LocationObject | null;
 }
 
-const MAPBOX_TOKEN = 'pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21keDljY3RvMWdpNDJtcXlsNnJvYnRiMyJ9.zP7q9AGBhezlWt84KLP99Q';
+const MAPBOX_TOKEN = 'pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ';
 
 export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) => {
   const webViewRef = useRef<WebView>(null);
