@@ -20,7 +20,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // Helper to get redirect URL for OAuth
 export const getRedirectUrl = () => {
   const redirectTo = AuthSession.makeRedirectUri({
-    native: 'com.yourapp.speedtracker://redirect',
+    native: 'myapp://redirect',
   });
   return redirectTo;
 };
