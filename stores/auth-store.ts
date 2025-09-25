@@ -1,6 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, getRedirectUrl } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 
@@ -20,7 +21,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const generateDeviceId = useCallback(async (): Promise<string> => {
     try {
       // Check if we already have a stored device ID
-      const stored = localStorage?.getItem('device_id') || null;
+      const stored = await AsyncStorage.getItem('device_id');
       if (stored) {
         return stored;
       }
@@ -34,7 +35,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       
       // Store the generated ID
       try {
-        localStorage?.setItem('device_id', uniqueId);
+        await AsyncStorage.setItem('device_id', uniqueId);
       } catch (e) {
         console.warn('Could not store device ID:', e);
       }
@@ -55,6 +56,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
     
     try {
+      // Try to create/update anonymous user record
+      // If the table doesn't exist, this will fail gracefully
       const { data, error } = await supabase
         .from('anonymous_users')
         .upsert({
@@ -73,14 +76,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         .select()
         .single();
 
-      if (error && error.code !== '23505') {
-        console.error('Error creating anonymous user:', error);
+      if (error) {
+        // If table doesn't exist or other database error, just log it but don't fail
+        console.warn('Could not create anonymous user record (this is OK if table does not exist):', error.message);
+        return { device_id: deviceId }; // Return minimal data
       }
       
       return data;
     } catch (error) {
-      console.error('Error in createAnonymousUser:', error);
-      return null;
+      console.warn('Error in createAnonymousUser (continuing without database record):', error);
+      return { device_id: deviceId }; // Return minimal data
     }
   }, []);
 
@@ -365,7 +370,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           .update({ last_seen: new Date().toISOString() })
           .eq('device_id', deviceId);
       } catch (error) {
-        console.error('Error updating last seen:', error);
+        // Silently fail if table doesn't exist
+        console.warn('Could not update last seen (table may not exist):', error);
       }
     }
   };
