@@ -15,6 +15,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { SpeedDisplay } from '@/components/SpeedDisplay';
 import { SectorPanel } from '@/components/SectorPanel';
 import { SectorInfoCard } from '@/components/SectorInfoCard';
+import { SectorLiveActivity } from '@/components/SectorLiveActivity';
 import { MapViewComponent } from '@/components/MapView';
 import { BackgroundTrackingStatus } from '@/components/BackgroundTrackingStatus';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
@@ -36,6 +37,10 @@ export default function HomeScreen() {
   
   const { 
     currentSector, 
+    sectorEntryTime,
+    currentSectorAverageSpeed,
+    sectorProgress,
+    willExceedLimit,
     checkSectorEntry, 
     checkSectorExit,
     updateSectorSpeed,
@@ -315,6 +320,18 @@ export default function HomeScreen() {
           </View>
         </View>
       </LinearGradient>
+      
+      {/* Live Activity - показва се когато сме в сектор */}
+      <SectorLiveActivity
+        visible={!!currentSector}
+        sector={currentSector}
+        currentSpeed={currentSpeed}
+        averageSpeed={currentSectorAverageSpeed}
+        timeInSector={sectorEntryTime ? Math.floor((Date.now() - sectorEntryTime) / 1000) : 0}
+        progress={sectorProgress}
+        isOverSpeed={currentSectorAverageSpeed > (currentSector?.speedLimit || 0)}
+        willExceedLimit={willExceedLimit}
+      />
     </View>
   );
 }
