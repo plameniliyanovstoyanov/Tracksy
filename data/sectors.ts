@@ -642,4 +642,44 @@ export const sectors: Sector[] = [
     },
     active: true,
   },
+  // Нова тестова отсечка - посока 1
+  {
+    id: '30',
+    name: 'Нова тестова отсечка - посока 1',
+    route: 'Тест',
+    speedLimit: 50,
+    distance: 2.0,
+    description: 'Нова тестова отсечка с ограничение 50 км/ч - посока 1.',
+    startPoint: {
+      lat: 42.705573,
+      lng: 23.312221,
+      name: 'Начало',
+    },
+    endPoint: {
+      lat: 42.704698,
+      lng: 23.332105,
+      name: 'Край',
+    },
+    active: true,
+  },
+  // Нова тестова отсечка - посока 2
+  {
+    id: '31',
+    name: 'Нова тестова отсечка - посока 2',
+    route: 'Тест',
+    speedLimit: 50,
+    distance: 2.0,
+    description: 'Нова тестова отсечка с ограничение 50 км/ч - посока 2.',
+    startPoint: {
+      lat: 42.705120,
+      lng: 23.331911,
+      name: 'Начало',
+    },
+    endPoint: {
+      lat: 42.705995,
+      lng: 23.312477,
+      name: 'Край',
+    },
+    active: true,
+  },
 ];
