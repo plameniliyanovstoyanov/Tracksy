@@ -87,8 +87,18 @@ export const SpeedMonitorOverlay: React.FC<SpeedMonitorOverlayProps> = ({
   };
 
   const getSpeedColor = (): string => {
-    if (data.currentSpeed > data.speedLimit + 5) return '#FF3B30';
-    if (data.currentSpeed > data.speedLimit) return '#FF9500';
+    const speedDiff = data.currentSpeed - data.speedLimit;
+    
+    // Червено - значително превишение (над +10 км/ч)
+    if (speedDiff > 10) return '#FF3B30';
+    
+    // Оранжево/жълто - умерено превишение (+3 до +10 км/ч)
+    if (speedDiff > 3) return '#FF9500';
+    
+    // Жълто - близо до лимита (0 до +3 км/ч)
+    if (speedDiff > 0) return '#FFCC00';
+    
+    // Зелено - в рамките на лимита
     return '#34C759';
   };
 
