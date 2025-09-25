@@ -1,4 +1,4 @@
-const MAPBOX_TOKEN = 'pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ';
+const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
 
 export interface RouteCoordinate {
   latitude: number;
@@ -24,6 +24,12 @@ interface Sector {
 
 export async function fetchSectorRoute(sector: Sector): Promise<[number, number][] | null> {
   try {
+    // Check if Mapbox token is available
+    if (!MAPBOX_TOKEN) {
+      console.error(`❌ Mapbox token not found. Please set EXPO_PUBLIC_MAPBOX_TOKEN in your environment variables.`);
+      return null;
+    }
+
     // Validate sector data
     if (!sector || !sector.startPoint || !sector.endPoint) {
       console.error(`❌ Invalid sector data for ${sector?.name || 'unknown'}`);
@@ -48,10 +54,21 @@ export async function fetchSectorRoute(sector: Sector): Promise<[number, number]
     if (!response.ok) {
       console.error(`❌ Failed to fetch route for ${sector.name}:`, response.status);
       try {
-        const errorText = await response.text();
-        console.error(`Error details:`, errorText);
+        const errorData = await response.json();
+        console.error(`❌ Error details for ${sector.name}:`, errorData);
+        
+        if (response.status === 401) {
+          console.error(`❌ Authentication failed. Please check your Mapbox token.`);
+        } else if (response.status === 422) {
+          console.error(`❌ Invalid coordinates or request parameters.`);
+        }
       } catch {
-        console.error('Could not read error response');
+        try {
+          const errorText = await response.text();
+          console.error(`❌ Error details for ${sector.name}:`, errorText);
+        } catch {
+          console.error('Could not read error response');
+        }
       }
       return null;
     }
@@ -105,6 +122,12 @@ export async function getRouteCoordinates(
   end: RouteCoordinate
 ): Promise<RouteCoordinate[]> {
   try {
+    // Check if Mapbox token is available
+    if (!MAPBOX_TOKEN) {
+      console.error(`❌ Mapbox token not found. Please set EXPO_PUBLIC_MAPBOX_TOKEN in your environment variables.`);
+      return [];
+    }
+
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`;
     
     console.log(`Fetching route: ${start.latitude},${start.longitude} to ${end.latitude},${end.longitude}`);
@@ -112,6 +135,9 @@ export async function getRouteCoordinates(
     const response = await fetch(url);
     if (!response.ok) {
       console.error('Failed to fetch directions:', response.status);
+      if (response.status === 401) {
+        console.error(`❌ Authentication failed. Please check your Mapbox token.`);
+      }
       return [];
     }
     
