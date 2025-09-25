@@ -14,6 +14,7 @@ import { useSectorStore } from '@/stores/sector-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { SpeedDisplay } from '@/components/SpeedDisplay';
 import { SectorPanel } from '@/components/SectorPanel';
+import { SectorInfoCard } from '@/components/SectorInfoCard';
 import { MapViewComponent } from '@/components/MapView';
 import { BackgroundTrackingStatus } from '@/components/BackgroundTrackingStatus';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
@@ -303,6 +304,10 @@ export default function HomeScreen() {
               averageSpeed={averageSpeed}
               isTracking={isTracking}
             />
+            
+            {currentSector && (
+              <SectorInfoCard sector={currentSector} />
+            )}
             
             {currentSector && (
               <SectorPanel sector={currentSector} />
