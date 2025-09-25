@@ -37,38 +37,30 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           
           try {
             const route = await fetchSectorRoute(sector);
-            if (route && route.length > 0) {
+            if (route && route.length > 2) { // Only use routes with more than 2 points
               console.log(`✅ Route loaded for ${sector.name}: ${route.length} points`);
               routes[sector.id] = route;
             } else {
-              console.log(`⚠️ No route data for ${sector.name}, using straight line`);
-              routes[sector.id] = [
-                [sector.startPoint.lng, sector.startPoint.lat],
-                [sector.endPoint.lng, sector.endPoint.lat]
-              ];
+              console.log(`⚠️ No valid route data for ${sector.name}, skipping sector visualization`);
+              // Don't add straight lines - skip this sector entirely
+              // This will prevent showing incorrect straight lines
             }
           } catch (error) {
             console.log(`❌ Error loading route for ${sector.name}:`, error);
-            routes[sector.id] = [
-              [sector.startPoint.lng, sector.startPoint.lat],
-              [sector.endPoint.lng, sector.endPoint.lat]
-            ];
+            // Don't add fallback straight lines
+            console.log(`🚫 Skipping visualization for ${sector.name} due to route fetch error`);
           }
           
-          // Add small delay between requests to avoid rate limiting
+          // Add delay between requests to avoid rate limiting
           if (i < sectors.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Increased delay
           }
         }
       } catch (error) {
         console.error('💥 Error in loadRoutes:', error);
-        // Create fallback routes for all sectors
-        for (const sector of sectors) {
-          routes[sector.id] = [
-            [sector.startPoint.lng, sector.startPoint.lat],
-            [sector.endPoint.lng, sector.endPoint.lat]
-          ];
-        }
+        // Don't create fallback straight line routes
+        // Better to show no route than incorrect straight lines
+        console.log('🚫 Skipping fallback routes to avoid showing incorrect straight lines');
       }
       
       console.log('🎉 All routes processing complete!');
@@ -136,26 +128,32 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
   // Update routes after map loads
   useEffect(() => {
     if (routesLoaded && Object.keys(sectorRoutes).length > 0 && webViewRef.current) {
-      // Wait a bit for the map to be fully loaded
+      // Wait longer for the map to be fully loaded
       const timer = setTimeout(() => {
-        console.log('🎯 Injecting sector routes into map...');
+        const validRoutes = Object.keys(sectorRoutes).filter(key => 
+          sectorRoutes[key] && sectorRoutes[key].length > 2
+        );
+        
+        console.log(`🎯 Injecting ${validRoutes.length} valid sector routes into map...`);
         const updateScript = `
-          console.log('📱 Received routes from React Native:', Object.keys(${JSON.stringify(sectorRoutes)}));
+          console.log('📱 Received ${validRoutes.length} valid routes from React Native');
           if (window.updateSectorRoutes) {
             window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
+            window.addSectorMarkers(${JSON.stringify(sectors)}, ${JSON.stringify(sectorRoutes)});
           } else {
             console.log('❌ updateSectorRoutes function not available yet');
             // Retry after a short delay
             setTimeout(() => {
               if (window.updateSectorRoutes) {
                 window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
+                window.addSectorMarkers(${JSON.stringify(sectors)}, ${JSON.stringify(sectorRoutes)});
               }
             }, 1000);
           }
           true;
         `;
         webViewRef.current?.injectJavaScript(updateScript);
-      }, 2000);
+      }, 3000); // Increased wait time
       
       return () => clearTimeout(timer);
     }
@@ -288,31 +286,24 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
               const coordinates = routes[sector.id];
               console.log('📍 Sector ' + sector.name + ': ' + (coordinates ? coordinates.length : 0) + ' coordinates');
               
-              // Validate coordinates before using them
-              let validCoordinates = coordinates;
-              if (!coordinates || !Array.isArray(coordinates) || coordinates.length === 0) {
-                console.log('⚠️ Using fallback coordinates for ' + sector.name);
-                validCoordinates = [
-                  [sector.startPoint.lng, sector.startPoint.lat],
-                  [sector.endPoint.lng, sector.endPoint.lat]
-                ];
-              } else {
-                // Filter out invalid coordinates
-                validCoordinates = coordinates.filter(coord => 
-                  Array.isArray(coord) && 
-                  coord.length === 2 && 
-                  typeof coord[0] === 'number' && 
-                  typeof coord[1] === 'number' &&
-                  !isNaN(coord[0]) && !isNaN(coord[1])
-                );
-                
-                if (validCoordinates.length === 0) {
-                  console.log('⚠️ No valid coordinates found, using fallback for ' + sector.name);
-                  validCoordinates = [
-                    [sector.startPoint.lng, sector.startPoint.lat],
-                    [sector.endPoint.lng, sector.endPoint.lat]
-                  ];
-                }
+              // Only include sectors that have proper route data
+              if (!coordinates || !Array.isArray(coordinates) || coordinates.length < 3) {
+                console.log('⚠️ Insufficient coordinates for ' + sector.name + ', skipping sector visualization');
+                return null; // Skip this sector entirely
+              }
+              
+              // Filter out invalid coordinates
+              const validCoordinates = coordinates.filter(coord => 
+                Array.isArray(coord) && 
+                coord.length === 2 && 
+                typeof coord[0] === 'number' && 
+                typeof coord[1] === 'number' &&
+                !isNaN(coord[0]) && !isNaN(coord[1])
+              );
+              
+              if (validCoordinates.length < 3) {
+                console.log('⚠️ Not enough valid coordinates for ' + sector.name + ', skipping sector visualization');
+                return null; // Skip this sector entirely
               }
               
               console.log('✅ Using ' + validCoordinates.length + ' coordinates for ' + sector.name);
@@ -332,7 +323,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
                   'coordinates': validCoordinates
                 }
               };
-            });
+            }).filter(feature => feature !== null); // Remove null features
             
             console.log('🎯 Updating map with ' + features.length + ' sector features');
             
@@ -346,31 +337,62 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             console.log('❌ Map source "sectors" not found');
           }
         };
+        
+        // Function to add markers only for sectors with valid routes
+        window.addSectorMarkers = function(sectorsData, routes) {
+          console.log('🏷️ Adding markers for sectors with valid routes');
+          
+          sectorsData.forEach(sector => {
+            const coordinates = routes[sector.id];
+            
+            // Only add markers for sectors that have valid route data
+            if (coordinates && Array.isArray(coordinates) && coordinates.length >= 3) {
+              // Start marker
+              const startEl = document.createElement('div');
+              startEl.style.width = '12px';
+              startEl.style.height = '12px';
+              startEl.style.borderRadius = '50%';
+              startEl.style.backgroundColor = '#ffaa00';
+              startEl.style.border = '2px solid white';
+              
+              new mapboxgl.Marker(startEl)
+                .setLngLat([sector.startPoint.lng, sector.startPoint.lat])
+                .setPopup(new mapboxgl.Popup({ offset: 25 })
+                  .setHTML('<div><strong>Начало: ' + sector.startPoint.name + '</strong><br>' + 
+                         sector.name + '<br>' +
+                         (sector.startPoint.km ? 'км ' + sector.startPoint.km : '') + '</div>'))
+                .addTo(map);
+              
+              // End marker
+              const endEl = document.createElement('div');
+              endEl.style.width = '12px';
+              endEl.style.height = '12px';
+              endEl.style.borderRadius = '50%';
+              endEl.style.backgroundColor = '#ff6600';
+              endEl.style.border = '2px solid white';
+              
+              new mapboxgl.Marker(endEl)
+                .setLngLat([sector.endPoint.lng, sector.endPoint.lat])
+                .setPopup(new mapboxgl.Popup({ offset: 25 })
+                  .setHTML('<div><strong>Край: ' + sector.endPoint.name + '</strong><br>' + 
+                         sector.name + '<br>' +
+                         (sector.endPoint.km ? 'км ' + sector.endPoint.km : '') + '</div>'))
+                .addTo(map);
+              
+              console.log('✅ Added markers for ' + sector.name);
+            } else {
+              console.log('⚠️ Skipping markers for ' + sector.name + ' (no valid route)');
+            }
+          });
+        };
 
         map.on('load', () => {
           console.log('🗺️ Map loaded, initializing sectors...');
           // Add sectors data
           const sectorsData = ${JSON.stringify(sectors)};
           
-          // Create initial features with straight lines
-          const initialFeatures = sectorsData.map(sector => ({
-            'type': 'Feature',
-            'properties': {
-              'name': sector.name,
-              'route': sector.route,
-              'speedLimit': sector.speedLimit,
-              'distance': sector.distance,
-              'startKm': sector.startPoint.km || 0,
-              'endKm': sector.endPoint.km || 0
-            },
-            'geometry': {
-              'type': 'LineString',
-              'coordinates': [
-                [sector.startPoint.lng, sector.startPoint.lat],
-                [sector.endPoint.lng, sector.endPoint.lat]
-              ]
-            }
-          }));
+          // Start with empty features - routes will be added when they load
+          const initialFeatures = [];
           
           // Add source for sector lines with initial straight lines
           map.addSource('sectors', {
@@ -409,40 +431,8 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             }
           });
 
-          // Add start markers
-          sectorsData.forEach(sector => {
-            // Start marker
-            const startEl = document.createElement('div');
-            startEl.style.width = '12px';
-            startEl.style.height = '12px';
-            startEl.style.borderRadius = '50%';
-            startEl.style.backgroundColor = '#ffaa00';
-            startEl.style.border = '2px solid white';
-            
-            new mapboxgl.Marker(startEl)
-              .setLngLat([sector.startPoint.lng, sector.startPoint.lat])
-              .setPopup(new mapboxgl.Popup({ offset: 25 })
-                .setHTML('<div><strong>Начало: ' + sector.startPoint.name + '</strong><br>' + 
-                       sector.name + '<br>' +
-                       (sector.startPoint.km ? 'км ' + sector.startPoint.km : '') + '</div>'))
-              .addTo(map);
-            
-            // End marker
-            const endEl = document.createElement('div');
-            endEl.style.width = '12px';
-            endEl.style.height = '12px';
-            endEl.style.borderRadius = '50%';
-            endEl.style.backgroundColor = '#ff6600';
-            endEl.style.border = '2px solid white';
-            
-            new mapboxgl.Marker(endEl)
-              .setLngLat([sector.endPoint.lng, sector.endPoint.lat])
-              .setPopup(new mapboxgl.Popup({ offset: 25 })
-                .setHTML('<div><strong>Край: ' + sector.endPoint.name + '</strong><br>' + 
-                       sector.name + '<br>' +
-                       (sector.endPoint.km ? 'км ' + sector.endPoint.km : '') + '</div>'))
-              .addTo(map);
-          });
+          // Add start and end markers only for sectors that will have routes
+          // Markers will be added when routes are loaded to avoid showing markers for sectors without routes
 
           // Add click handler for sector info
           map.on('click', 'sectors-line', (e) => {
@@ -485,6 +475,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Зареждане на маршрути...</Text>
           <Text style={styles.loadingSubtext}>Получаване на реални пътни данни от Mapbox</Text>
+          <Text style={styles.loadingNote}>Секторите ще се покажат само ако има валидни маршрутни данни</Text>
         </View>
       ) : (
         <WebView
@@ -521,7 +512,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: '#ffaa00' }]} />
-          <Text style={styles.legendText}>Сектори за средна скорост</Text>
+          <Text style={styles.legendText}>Сектори (само с валидни маршрути)</Text>
         </View>
       </View>
     </View>
@@ -591,6 +582,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 8,
     textAlign: 'center',
+  },
+  loadingNote: {
+    color: '#666',
+    fontSize: 10,
+    marginTop: 4,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   centerButton: {
     position: 'absolute',

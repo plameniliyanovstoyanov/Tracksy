@@ -1,5 +1,10 @@
 const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ';
 
+// Cache for storing successful route fetches
+const routeCache = new Map<string, [number, number][]>();
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+const cacheTimestamps = new Map<string, number>();
+
 export interface RouteCoordinate {
   latitude: number;
   longitude: number;
@@ -24,6 +29,18 @@ interface Sector {
 
 export async function fetchSectorRoute(sector: Sector): Promise<[number, number][] | null> {
   try {
+    // Create cache key
+    const cacheKey = `${sector.id}_${sector.startPoint.lng}_${sector.startPoint.lat}_${sector.endPoint.lng}_${sector.endPoint.lat}`;
+    
+    // Check cache first
+    const cachedRoute = routeCache.get(cacheKey);
+    const cacheTime = cacheTimestamps.get(cacheKey);
+    
+    if (cachedRoute && cacheTime && (Date.now() - cacheTime) < CACHE_DURATION) {
+      console.log(`📦 Using cached route for ${sector.name} (${cachedRoute.length} points)`);
+      return cachedRoute;
+    }
+
     // Check if Mapbox token is available
     if (!MAPBOX_TOKEN) {
       console.error(`❌ Mapbox token not found. Please set EXPO_PUBLIC_MAPBOX_TOKEN in your environment variables.`);
@@ -42,75 +59,96 @@ export async function fetchSectorRoute(sector: Sector): Promise<[number, number]
       return null;
     }
 
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${sector.startPoint.lng},${sector.startPoint.lat};${sector.endPoint.lng},${sector.endPoint.lat}?geometries=geojson&overview=full&steps=true&access_token=${MAPBOX_TOKEN}`;
+    // Try multiple routing profiles for better road following
+    const profiles = ['driving', 'driving-traffic'];
+    let bestRoute: [number, number][] | null = null;
     
-    console.log(`🚗 Fetching route for ${sector.name}`);
-    console.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
-    console.log(`📍 To: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
-    
-    const response = await fetch(url);
-    console.log(`📡 Response status: ${response.status}`);
-    
-    if (!response.ok) {
-      console.error(`❌ Failed to fetch route for ${sector.name}:`, response.status);
+    for (const profile of profiles) {
       try {
-        const errorData = await response.json();
-        console.error(`❌ Error details for ${sector.name}:`, errorData);
+        const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${sector.startPoint.lng},${sector.startPoint.lat};${sector.endPoint.lng},${sector.endPoint.lat}?geometries=geojson&overview=full&steps=true&alternatives=false&continue_straight=false&access_token=${MAPBOX_TOKEN}`;
         
-        if (response.status === 401) {
-          console.error(`❌ Authentication failed. Please check your Mapbox token.`);
-        } else if (response.status === 422) {
-          console.error(`❌ Invalid coordinates or request parameters.`);
+        console.log(`🚗 Fetching route for ${sector.name} using ${profile} profile`);
+        console.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
+        console.log(`📍 To: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+        
+        console.log(`📡 Response status for ${profile}: ${response.status}`);
+        
+        if (!response.ok) {
+          console.error(`❌ Failed to fetch route for ${sector.name} with ${profile}:`, response.status);
+          
+          if (response.status === 401) {
+            console.error(`❌ Authentication failed. Mapbox token may be invalid or expired.`);
+            // Don't try other profiles if auth fails
+            break;
+          } else if (response.status === 422) {
+            console.error(`❌ Invalid coordinates or request parameters for ${profile}.`);
+            continue; // Try next profile
+          } else if (response.status === 429) {
+            console.error(`❌ Rate limit exceeded. Waiting before retry...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            continue;
+          }
+          
+          try {
+            const errorData = await response.json();
+            console.error(`❌ Error details for ${sector.name} (${profile}):`, errorData);
+          } catch {
+            console.error('Could not read error response');
+          }
+          continue;
         }
-      } catch {
-        try {
-          const errorText = await response.text();
-          console.error(`❌ Error details for ${sector.name}:`, errorText);
-        } catch {
-          console.error('Could not read error response');
+        
+        const data = await response.json();
+        console.log(`📊 API Response for ${sector.name} (${profile}):`, {
+          routes: data.routes?.length || 0,
+          code: data.code
+        });
+        
+        if (data.routes && Array.isArray(data.routes) && data.routes.length > 0) {
+          const route = data.routes[0];
+          if (route.geometry && route.geometry.coordinates && Array.isArray(route.geometry.coordinates)) {
+            const coordinates = route.geometry.coordinates;
+            console.log(`✅ Route found for ${sector.name} with ${profile}: ${coordinates.length} points`);
+            
+            // Ensure coordinates are valid numbers
+            const validCoordinates = coordinates.filter((coord: any) => 
+              Array.isArray(coord) && 
+              coord.length === 2 && 
+              typeof coord[0] === 'number' && 
+              typeof coord[1] === 'number' &&
+              !isNaN(coord[0]) && !isNaN(coord[1])
+            );
+            
+            if (validCoordinates.length > 2) { // Need at least 3 points for a proper route
+              console.log(`✅ Valid coordinates: ${validCoordinates.length}/${coordinates.length}`);
+              bestRoute = validCoordinates as [number, number][];
+              
+              // Cache the successful route
+              routeCache.set(cacheKey, bestRoute);
+              cacheTimestamps.set(cacheKey, Date.now());
+              
+              return bestRoute;
+            }
+          }
         }
+      } catch (error) {
+        console.error(`💥 Error fetching route for ${sector.name} with ${profile}:`, error);
+        continue;
       }
-      return null;
     }
     
-    const data = await response.json();
-    console.log(`📊 API Response for ${sector.name}:`, {
-      routes: data.routes?.length || 0,
-      code: data.code
-    });
-    
-    if (data.routes && Array.isArray(data.routes) && data.routes.length > 0) {
-      const route = data.routes[0];
-      if (route.geometry && route.geometry.coordinates && Array.isArray(route.geometry.coordinates)) {
-        const coordinates = route.geometry.coordinates;
-        console.log(`✅ Route found for ${sector.name} with ${coordinates.length} points`);
-        console.log(`🗺️ First coordinate: [${coordinates[0][0]}, ${coordinates[0][1]}]`);
-        console.log(`🗺️ Last coordinate: [${coordinates[coordinates.length-1][0]}, ${coordinates[coordinates.length-1][1]}]`);
-        
-        // Ensure coordinates are valid numbers
-        const validCoordinates = coordinates.filter((coord: any) => 
-          Array.isArray(coord) && 
-          coord.length === 2 && 
-          typeof coord[0] === 'number' && 
-          typeof coord[1] === 'number' &&
-          !isNaN(coord[0]) && !isNaN(coord[1])
-        );
-        
-        if (validCoordinates.length > 0) {
-          console.log(`✅ Valid coordinates: ${validCoordinates.length}/${coordinates.length}`);
-          return validCoordinates as [number, number][];
-        } else {
-          console.error(`❌ No valid coordinates found for ${sector.name}`);
-          return null;
-        }
-      } else {
-        console.error(`❌ Invalid route geometry for ${sector.name}`);
-        return null;
-      }
-    }
-    
-    console.log(`❌ No routes found for ${sector.name}`);
+    // If no route was found with any profile, return null
+    console.log(`❌ No valid routes found for ${sector.name} with any profile`);
     return null;
+    
+
   } catch (error) {
     console.error(`💥 Error fetching route for ${sector.name}:`, error);
     return null;
