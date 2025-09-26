@@ -20,6 +20,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
   const [hasInitiallyFocused, setHasInitiallyFocused] = useState(false);
   const [lastCenterTime, setLastCenterTime] = useState(0);
   const [previousLocation, setPreviousLocation] = useState<Location.LocationObject | null>(null);
+  const [isFollowingUser, setIsFollowingUser] = useState(true);
 
   // Load sector routes
   useEffect(() => {
@@ -86,8 +87,8 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
       const currentTime = Date.now();
       let shouldCenter = !hasInitiallyFocused;
       
-      // Check if user is moving and enough time has passed for auto-centering
-      if (hasInitiallyFocused && previousLocation) {
+      // Check if user is moving and should auto-center
+      if (hasInitiallyFocused && previousLocation && isFollowingUser) {
         const distance = calculateDistance(
           previousLocation.coords.latitude,
           previousLocation.coords.longitude,
@@ -95,10 +96,10 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           location.coords.longitude
         );
         
-        // If user moved more than 50 meters and 10 seconds passed, auto-center
+        // More aggressive following: center if user moved more than 10 meters and 2 seconds passed
         const timeSinceLastCenter = currentTime - lastCenterTime;
-        const isMoving = distance > 50; // 50 meters
-        const shouldAutoCenter = isMoving && timeSinceLastCenter > 10000; // 10 seconds
+        const isMoving = distance > 10; // 10 meters (reduced from 50)
+        const shouldAutoCenter = isMoving && timeSinceLastCenter > 2000; // 2 seconds (reduced from 10)
         
         if (shouldAutoCenter) {
           shouldCenter = true;
@@ -109,7 +110,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
       
       const updateScript = `
         if (window.updateUserLocation) {
-          window.updateUserLocation(${location.coords.longitude}, ${location.coords.latitude}, ${shouldCenter});
+          window.updateUserLocation(${location.coords.longitude}, ${location.coords.latitude}, ${shouldCenter}, ${isFollowingUser});
         }
         true;
       `;
@@ -123,7 +124,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
       
       setPreviousLocation(location);
     }
-  }, [location, hasInitiallyFocused, previousLocation, lastCenterTime]);
+  }, [location, hasInitiallyFocused, previousLocation, lastCenterTime, isFollowingUser]);
 
   // Update routes after map loads
   useEffect(() => {
@@ -180,6 +181,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
     if (location && webViewRef.current) {
       console.log('🎯 Manually centering map on user location');
       setLastCenterTime(Date.now()); // Reset auto-center timer
+      setIsFollowingUser(true); // Re-enable following
       const centerScript = `
         if (window.centerOnUser) {
           window.centerOnUser();
@@ -188,6 +190,12 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
       `;
       webViewRef.current.injectJavaScript(centerScript);
     }
+  };
+
+  // Function to toggle user following mode
+  const toggleFollowMode = () => {
+    setIsFollowingUser(!isFollowingUser);
+    console.log('📍 User following mode:', !isFollowingUser ? 'enabled' : 'disabled');
   };
 
   const mapHTML = `
@@ -229,16 +237,17 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         let userMarker = null;
         
         // Function to update user location
-        window.updateUserLocation = function(lng, lat, shouldCenter = false) {
+        window.updateUserLocation = function(lng, lat, shouldCenter = false, isFollowing = true) {
           if (userMarker) {
             userMarker.setLngLat([lng, lat]);
             
-            // Center map if requested (first time or manual center)
+            // Center map if requested (first time, manual center, or following mode)
             if (shouldCenter) {
               map.flyTo({
                 center: [lng, lat],
-                zoom: 14,
-                duration: 2000
+                zoom: 15, // Slightly closer zoom for better following
+                duration: isFollowing ? 1000 : 2000, // Faster animation when following
+                essential: true // Ensures animation completes even if interrupted
               });
             }
           } else {
@@ -257,7 +266,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             // Always center map on user location when first added
             map.flyTo({
               center: [lng, lat],
-              zoom: 14,
+              zoom: 15,
               duration: 2000
             });
           }
@@ -269,11 +278,22 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             const lngLat = userMarker.getLngLat();
             map.flyTo({
               center: [lngLat.lng, lngLat.lat],
-              zoom: 14,
-              duration: 1500
+              zoom: 15,
+              duration: 1500,
+              essential: true
             });
           }
         };
+
+        // Disable following when user manually interacts with map
+        let userInteractionTimeout;
+        map.on('dragstart', () => {
+          window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'userInteraction', action: 'dragstart' }));
+        });
+        
+        map.on('zoomstart', () => {
+          window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'userInteraction', action: 'zoomstart' }));
+        });
 
         // Function to update sector routes
         window.updateSectorRoutes = function(routes) {
@@ -491,18 +511,38 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           onLoadEnd={() => {
             console.log('🌐 WebView loaded');
           }}
+          onMessage={(event) => {
+            try {
+              const data = JSON.parse(event.nativeEvent.data);
+              if (data.type === 'userInteraction') {
+                console.log('👆 User interacted with map:', data.action);
+                setIsFollowingUser(false); // Disable following when user interacts
+              }
+            } catch (error) {
+              console.log('Error parsing WebView message:', error);
+            }
+          }}
         />
       )}
 
-      {/* Center button */}
+      {/* Center and Follow buttons */}
       {location && (
-        <TouchableOpacity 
-          style={styles.centerButton} 
-          onPress={centerOnUserLocation}
-          activeOpacity={0.8}
-        >
-          <MapPin color="#fff" size={20} />
-        </TouchableOpacity>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity 
+            style={[styles.followButton, { backgroundColor: isFollowingUser ? '#00ff88' : '#666' }]} 
+            onPress={toggleFollowMode}
+            activeOpacity={0.8}
+          >
+            <Navigation color="#fff" size={18} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.centerButton} 
+            onPress={centerOnUserLocation}
+            activeOpacity={0.8}
+          >
+            <MapPin color="#fff" size={20} />
+          </TouchableOpacity>
+        </View>
       )}
 
       <View style={styles.legend}>
@@ -590,10 +630,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
   },
-  centerButton: {
+  buttonContainer: {
     position: 'absolute',
     bottom: 80,
     right: 16,
+    flexDirection: 'column',
+    gap: 12,
+  },
+  followButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  centerButton: {
     width: 48,
     height: 48,
     borderRadius: 24,
