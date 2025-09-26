@@ -21,6 +21,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
   const [lastCenterTime, setLastCenterTime] = useState(0);
   const [previousLocation, setPreviousLocation] = useState<Location.LocationObject | null>(null);
   const [isFollowingUser, setIsFollowingUser] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
 
   // Load sector routes
   useEffect(() => {
@@ -83,7 +84,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
 
   // Update location on the map and handle automatic centering
   useEffect(() => {
-    if (location && webViewRef.current) {
+    if (location && webViewRef.current && mapReady) {
       const currentTime = Date.now();
       let shouldCenter = !hasInitiallyFocused;
       
@@ -124,7 +125,23 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
       
       setPreviousLocation(location);
     }
-  }, [location, hasInitiallyFocused, previousLocation, lastCenterTime, isFollowingUser]);
+  }, [location, hasInitiallyFocused, previousLocation, lastCenterTime, isFollowingUser, mapReady]);
+
+  // Force center on user location when both map and location are ready
+  useEffect(() => {
+    if (location && mapReady && webViewRef.current && !hasInitiallyFocused) {
+      console.log('🎯 Force centering map on user location at app startup');
+      const centerScript = `
+        if (window.updateUserLocation) {
+          window.updateUserLocation(${location.coords.longitude}, ${location.coords.latitude}, true, true);
+        }
+        true;
+      `;
+      webViewRef.current.injectJavaScript(centerScript);
+      setHasInitiallyFocused(true);
+      setLastCenterTime(Date.now());
+    }
+  }, [location, mapReady, hasInitiallyFocused]);
 
   // Update routes after map loads
   useEffect(() => {
@@ -408,6 +425,8 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
 
         map.on('load', () => {
           console.log('🗺️ Map loaded, initializing sectors...');
+          // Notify React Native that map is ready
+          window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'mapReady' }));
           // Add sectors data
           const sectorsData = ${JSON.stringify(sectors)};
           
@@ -510,6 +529,11 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           mixedContentMode="compatibility"
           onLoadEnd={() => {
             console.log('🌐 WebView loaded');
+            // Give the map a moment to fully initialize
+            setTimeout(() => {
+              setMapReady(true);
+              console.log('🗺️ Map is ready for location updates');
+            }, 1000);
           }}
           onMessage={(event) => {
             try {
