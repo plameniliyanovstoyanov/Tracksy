@@ -97,10 +97,10 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           location.coords.longitude
         );
         
-        // More aggressive following: center if user moved more than 10 meters and 2 seconds passed
+        // Very aggressive following: center if user moved more than 5 meters and 1 second passed
         const timeSinceLastCenter = currentTime - lastCenterTime;
-        const isMoving = distance > 10; // 10 meters (reduced from 50)
-        const shouldAutoCenter = isMoving && timeSinceLastCenter > 2000; // 2 seconds (reduced from 10)
+        const isMoving = distance > 5; // 5 meters - very sensitive
+        const shouldAutoCenter = isMoving && timeSinceLastCenter > 1000; // 1 second - very frequent
         
         if (shouldAutoCenter) {
           shouldCenter = true;
@@ -262,8 +262,8 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             if (shouldCenter) {
               map.flyTo({
                 center: [lng, lat],
-                zoom: 15, // Slightly closer zoom for better following
-                duration: isFollowing ? 1000 : 2000, // Faster animation when following
+                zoom: 16, // Closer zoom for better following
+                duration: isFollowing ? 500 : 1500, // Much faster animation when following
                 essential: true // Ensures animation completes even if interrupted
               });
             }
@@ -302,15 +302,25 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           }
         };
 
-        // Disable following when user manually interacts with map
+        // Disable following when user manually interacts with map, but re-enable after timeout
         let userInteractionTimeout;
-        map.on('dragstart', () => {
-          window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'userInteraction', action: 'dragstart' }));
-        });
         
-        map.on('zoomstart', () => {
-          window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'userInteraction', action: 'zoomstart' }));
-        });
+        const handleUserInteraction = (action) => {
+          window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'userInteraction', action: action }));
+          
+          // Clear existing timeout
+          if (userInteractionTimeout) {
+            clearTimeout(userInteractionTimeout);
+          }
+          
+          // Re-enable following after 10 seconds of no interaction
+          userInteractionTimeout = setTimeout(() => {
+            window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'reEnableFollowing' }));
+          }, 10000);
+        };
+        
+        map.on('dragstart', () => handleUserInteraction('dragstart'));
+        map.on('zoomstart', () => handleUserInteraction('zoomstart'));
 
         // Function to update sector routes
         window.updateSectorRoutes = function(routes) {
@@ -541,6 +551,9 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
               if (data.type === 'userInteraction') {
                 console.log('👆 User interacted with map:', data.action);
                 setIsFollowingUser(false); // Disable following when user interacts
+              } else if (data.type === 'reEnableFollowing') {
+                console.log('🔄 Re-enabling following mode after user interaction timeout');
+                setIsFollowingUser(true); // Re-enable following after timeout
               }
             } catch (error) {
               console.log('Error parsing WebView message:', error);
