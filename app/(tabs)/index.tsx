@@ -12,9 +12,7 @@ import * as Location from 'expo-location';
 import { useSpeedStore } from '@/stores/speed-store';
 import { useSectorStore } from '@/stores/sector-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { SpeedDisplay } from '@/components/SpeedDisplay';
 import { UnifiedSectorDisplay } from '@/components/UnifiedSectorDisplay';
-import { SectorLiveActivity } from '@/components/SectorLiveActivity';
 import { MapViewComponent } from '@/components/MapView';
 import { BackgroundTrackingStatus } from '@/components/BackgroundTrackingStatus';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
@@ -27,19 +25,13 @@ export default function HomeScreen() {
   
   const { 
     currentSpeed, 
-    averageSpeed, 
     updateSpeed, 
     startTracking, 
-    stopTracking,
-    isTracking 
+    stopTracking
   } = useSpeedStore();
   
   const { 
     currentSector, 
-    sectorEntryTime,
-    currentSectorAverageSpeed,
-    sectorProgress,
-    willExceedLimit,
     checkSectorEntry, 
     checkSectorExit,
     updateSectorSpeed,
@@ -303,30 +295,19 @@ export default function HomeScreen() {
           <View style={styles.bottomSection}>
             <BackgroundTrackingStatus />
             
-            <SpeedDisplay 
-              currentSpeed={currentSpeed}
-              averageSpeed={averageSpeed}
-              isTracking={isTracking}
-            />
-            
-            {currentSector && (
+            {currentSector ? (
               <UnifiedSectorDisplay sector={currentSector} />
+            ) : (
+              <View style={styles.noSectorContainer}>
+                <Text style={styles.noSectorText}>Няма активен сектор</Text>
+                <Text style={styles.currentSpeedOnly}>{currentSpeed.toFixed(0)} км/ч</Text>
+              </View>
             )}
           </View>
         </View>
       </LinearGradient>
       
-      {/* Live Activity - показва се когато сме в сектор */}
-      <SectorLiveActivity
-        visible={!!currentSector}
-        sector={currentSector}
-        currentSpeed={currentSpeed}
-        averageSpeed={currentSectorAverageSpeed}
-        timeInSector={sectorEntryTime ? Math.floor((Date.now() - sectorEntryTime) / 1000) : 0}
-        progress={sectorProgress}
-        isOverSpeed={currentSectorAverageSpeed > (currentSector?.speedLimit || 0)}
-        willExceedLimit={willExceedLimit}
-      />
+
     </View>
   );
 }
@@ -411,5 +392,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 4,
     lineHeight: 18,
+  },
+  noSectorContainer: {
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  noSectorText: {
+    color: '#888',
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  currentSpeedOnly: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: 'bold',
   },
 });
