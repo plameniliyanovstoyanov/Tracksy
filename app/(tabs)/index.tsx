@@ -13,8 +13,7 @@ import { useSpeedStore } from '@/stores/speed-store';
 import { useSectorStore } from '@/stores/sector-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { SpeedDisplay } from '@/components/SpeedDisplay';
-import { SectorPanel } from '@/components/SectorPanel';
-import { SectorInfoCard } from '@/components/SectorInfoCard';
+import { UnifiedSectorDisplay } from '@/components/UnifiedSectorDisplay';
 import { SectorLiveActivity } from '@/components/SectorLiveActivity';
 import { MapViewComponent } from '@/components/MapView';
 import { BackgroundTrackingStatus } from '@/components/BackgroundTrackingStatus';
@@ -311,11 +310,7 @@ export default function HomeScreen() {
             />
             
             {currentSector && (
-              <SectorInfoCard sector={currentSector} />
-            )}
-            
-            {currentSector && (
-              <SectorPanel sector={currentSector} />
+              <UnifiedSectorDisplay sector={currentSector} />
             )}
           </View>
         </View>
