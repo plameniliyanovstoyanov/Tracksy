@@ -141,6 +141,65 @@ function isPointNearSector(point: Location, sector: SectorWithRoute, threshold: 
   return false;
 }
 
+// Проверка дали се приближаваме към сектор по правилния път (за известия)
+function isApproachingSectorOnRoute(point: Location, sector: SectorWithRoute, warningDistance: number = 500): boolean {
+  // Първо проверяваме дали сме близо до началото на сектора
+  const distToStart = getDistance(point.latitude, point.longitude, sector.startPoint.lat, sector.startPoint.lng);
+  
+  // Ако сме твърде далеч от началото, не сме в предупредителната зона
+  if (distToStart > warningDistance) {
+    return false;
+  }
+  
+  // Ако сме твърде близо до началото, вече сме в сектора
+  if (distToStart < 50) {
+    return false;
+  }
+  
+  // Проверяваме дали сме на пътя към сектора
+  if (sector.routeCoordinates && sector.routeCoordinates.length > 1) {
+    // Намираме най-близкия сегмент от маршрута
+    let minDistanceToRoute = Infinity;
+    let isOnApproachPath = false;
+    
+    for (let i = 0; i < sector.routeCoordinates.length - 1; i++) {
+      const lineStart = sector.routeCoordinates[i];
+      const lineEnd = sector.routeCoordinates[i + 1];
+      
+      const distanceToSegment = distanceToLineSegment(point, lineStart, lineEnd);
+      
+      if (distanceToSegment < minDistanceToRoute) {
+        minDistanceToRoute = distanceToSegment;
+        
+        // Проверяваме дали този сегмент е в посоката към началото на сектора
+        const [lng1, lat1] = lineStart;
+        const [lng2, lat2] = lineEnd;
+        const segmentDistToStart = getDistance(lat1, lng1, sector.startPoint.lat, sector.startPoint.lng);
+        const segmentEndDistToStart = getDistance(lat2, lng2, sector.startPoint.lat, sector.startPoint.lng);
+        
+        // Ако сегментът води към началото на сектора (разстоянието намалява)
+        if (segmentEndDistToStart < segmentDistToStart) {
+          isOnApproachPath = true;
+        }
+      }
+    }
+    
+    // Трябва да сме близо до маршрута (в рамките на 100м) и на правилния път
+    return minDistanceToRoute < 100 && isOnApproachPath;
+  } else {
+    // Ако няма маршрут, проверяваме дали сме на въображаемата линия между началото и края
+    const distanceToSectorLine = distanceToLineSegment(
+      point,
+      [sector.startPoint.lng, sector.startPoint.lat],
+      [sector.endPoint.lng, sector.endPoint.lat]
+    );
+    
+    // Трябва да сме близо до линията на сектора (в рамките на 100м)
+    // и в предупредителната зона около началото
+    return distanceToSectorLine < 100 && distToStart < warningDistance && distToStart > 50;
+  }
+}
+
 export const useSectorStore = create(
   combine(
     {

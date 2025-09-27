@@ -64,25 +64,99 @@ function isPointNearSector(point: { latitude: number; longitude: number }, secto
   return false;
 }
 
-// Проверка дали се приближаваме към сектор (за предупреждение)
-function isApproachingSector(point: { latitude: number; longitude: number }, sector: SectorCheck, warningDistance: number = 500): boolean {
+// Функция за изчисляване на разстояние от точка до линия
+function distanceToLineSegment(point: { latitude: number; longitude: number }, lineStart: [number, number], lineEnd: [number, number]): number {
+  const [lng1, lat1] = lineStart;
+  const [lng2, lat2] = lineEnd;
+  
+  const A = point.longitude - lng1;
+  const B = point.latitude - lat1;
+  const C = lng2 - lng1;
+  const D = lat2 - lat1;
+  
+  const dot = A * C + B * D;
+  const lenSq = C * C + D * D;
+  
+  let param = -1;
+  if (lenSq !== 0) {
+    param = dot / lenSq;
+  }
+  
+  let xx, yy;
+  
+  if (param < 0) {
+    xx = lng1;
+    yy = lat1;
+  } else if (param > 1) {
+    xx = lng2;
+    yy = lat2;
+  } else {
+    xx = lng1 + param * C;
+    yy = lat1 + param * D;
+  }
+  
+  return getDistance(point.latitude, point.longitude, yy, xx);
+}
+
+// Проверка дали се приближаваме към сектор по правилния път
+function isApproachingSectorOnRoute(point: { latitude: number; longitude: number }, sector: SectorCheck, warningDistance: number = 500): boolean {
+  // Първо проверяваме дали сме близо до началото на сектора
   const distToStart = getDistance(point.latitude, point.longitude, sector.startPoint.lat, sector.startPoint.lng);
   
-  // Проверяваме дали сме в предупредителната зона около началото
-  if (distToStart < warningDistance && distToStart > 100) {
-    return true;
+  // Ако сме твърде далеч от началото, не сме в предупредителната зона
+  if (distToStart > warningDistance) {
+    return false;
   }
   
-  // Ако има маршрут, проверяваме дали сме близо до началото на маршрута
-  if (sector.route && sector.route.length > 0) {
-    const firstRoutePoint = sector.route[0];
-    const dist = getDistance(point.latitude, point.longitude, firstRoutePoint.lat, firstRoutePoint.lng);
-    if (dist < warningDistance && dist > 100) {
-      return true;
+  // Ако сме твърде близо до началото, вече сме в сектора
+  if (distToStart < 50) {
+    return false;
+  }
+  
+  // Проверяваме дали сме на пътя към сектора
+  // Създаваме въображаема линия от текущата позиция към началото на сектора
+  // и проверяваме дали тази линия е в посоката на пътя
+  
+  // Ако има маршрут, проверяваме дали сме близо до някой сегмент от маршрута ПРЕДИ началото
+  if (sector.route && sector.route.length > 1) {
+    // Намираме най-близкия сегмент от маршрута
+    let minDistanceToRoute = Infinity;
+    let isOnApproachPath = false;
+    
+    for (let i = 0; i < sector.route.length - 1; i++) {
+      const lineStart: [number, number] = [sector.route[i].lng, sector.route[i].lat];
+      const lineEnd: [number, number] = [sector.route[i + 1].lng, sector.route[i + 1].lat];
+      
+      const distanceToSegment = distanceToLineSegment(point, lineStart, lineEnd);
+      
+      if (distanceToSegment < minDistanceToRoute) {
+        minDistanceToRoute = distanceToSegment;
+        
+        // Проверяваме дали този сегмент е в посоката към началото на сектора
+        const segmentDistToStart = getDistance(sector.route[i].lat, sector.route[i].lng, sector.startPoint.lat, sector.startPoint.lng);
+        const segmentEndDistToStart = getDistance(sector.route[i + 1].lat, sector.route[i + 1].lng, sector.startPoint.lat, sector.startPoint.lng);
+        
+        // Ако сегментът води към началото на сектора (разстоянието намалява)
+        if (segmentEndDistToStart < segmentDistToStart) {
+          isOnApproachPath = true;
+        }
+      }
     }
+    
+    // Трябва да сме близо до маршрута (в рамките на 100м) и на правилния път
+    return minDistanceToRoute < 100 && isOnApproachPath;
+  } else {
+    // Ако няма маршрут, проверяваме дали сме на въображаемата линия между началото и края
+    const distanceToSectorLine = distanceToLineSegment(
+      point,
+      [sector.startPoint.lng, sector.startPoint.lat],
+      [sector.endPoint.lng, sector.endPoint.lat]
+    );
+    
+    // Трябва да сме близо до линията на сектора (в рамките на 100м)
+    // и в предупредителната зона около началото
+    return distanceToSectorLine < 100 && distToStart < warningDistance && distToStart > 50;
   }
-  
-  return false;
 }
 
 // Изчисляване на оставащо разстояние до края на сектора
@@ -231,14 +305,14 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               route: []
             };
             
-            const distToStart = getDistance(location.coords.latitude, location.coords.longitude, sector.startPoint.lat, sector.startPoint.lng);
-            
             // Проверяваме за всяко разстояние за предупреждение
             for (const warningDistance of warningDistances) {
               const warningKey = `warning-${sector.id}-${warningDistance}`;
               
-              // Проверяваме дали се приближаваме и не сме вече предупредени за това разстояние
-              if (distToStart < warningDistance && distToStart > warningDistance - 100) {
+              // ВАЖНО: Проверяваме дали се приближаваме ПО ПРАВИЛНИЯ ПЪТ
+              const isApproaching = isApproachingSectorOnRoute(location.coords, sectorCheck, warningDistance);
+              
+              if (isApproaching) {
                 // Проверяваме дали не сме изпратили известие скоро за това разстояние
                 const lastWarningTime = trackingState.lastNotificationTime[warningKey] || 0;
                 if (now - lastWarningTime > 120000) { // Минимум 2 минути между предупрежденията за едно разстояние
@@ -246,23 +320,24 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                   
                   // Определяме текста според разстоянието
                   let distanceText = '';
-                  if (warningDistance >= 1000) {
-                    distanceText = `${warningDistance / 1000}км`;
+                  const actualDistance = getDistance(location.coords.latitude, location.coords.longitude, sector.startPoint.lat, sector.startPoint.lng);
+                  if (actualDistance >= 1000) {
+                    distanceText = `${(actualDistance / 1000).toFixed(1)}км`;
                   } else {
-                    distanceText = `${warningDistance}м`;
+                    distanceText = `${Math.round(actualDistance)}м`;
                   }
                   
                   // Изпращаме предупредително известие
                   await Notifications.scheduleNotificationAsync({
                     content: {
                       title: `⚠️ Сектор след ${distanceText}`,
-                      body: `📍 ${sector.name}\n🚗 Ограничение: ${sector.speedLimit} км/ч\n⏱️ Средна скорост в сектора`,
+                      body: `📍 ${sector.name}\n🚗 Ограничение: ${sector.speedLimit} км/ч\n🛣️ На правилния път`,
                       data: { 
                         sectorId: sector.id,
                         type: 'sector-warning',
                         speedLimit: sector.speedLimit,
                         sectorName: sector.name,
-                        distance: warningDistance
+                        distance: actualDistance
                       },
                       sound: settings.soundEnabled ?? true,
                       priority: 'high',
@@ -270,12 +345,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                     trigger: null,
                   });
                   
-                  console.log(`Warning: Approaching sector ${sector.name} at ${distanceText}`);
+                  console.log(`Warning: Approaching sector ${sector.name} on correct route at ${distanceText}`);
                 }
               }
             }
             
-            // Почистваме стари предупреждения ако сме се отдалечили
+            // Почистваме стари предупреждения ако сме се отдалечили от сектора
+            const distToStart = getDistance(location.coords.latitude, location.coords.longitude, sector.startPoint.lat, sector.startPoint.lng);
             const maxWarningDistance = Math.max(...warningDistances);
             if (distToStart > maxWarningDistance + 500) {
               // Почистваме всички предупреждения за този сектор
