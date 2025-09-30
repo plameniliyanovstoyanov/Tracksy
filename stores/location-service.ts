@@ -391,11 +391,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             if (trackingState.exitConfirmations >= 3) {
               // Излизаме от сектора
               const exitingSector = sectors.find(s => s.id === trackingState.currentSectorId);
+              
+              // Изчисляваме средната скорост веднъж за всички случаи
+              const speedReadingsStr = await AsyncStorage.getItem('sector-speed-readings');
+              const speedReadings: number[] = speedReadingsStr ? JSON.parse(speedReadingsStr) : [];
+              const avgSpeed = speedReadings.length > 0 ? speedReadings.reduce((a, b) => a + b, 0) / speedReadings.length : 0;
+              
               if (exitingSector) {
-                const speedReadingsStr = await AsyncStorage.getItem('sector-speed-readings');
-                const speedReadings: number[] = speedReadingsStr ? JSON.parse(speedReadingsStr) : [];
-                const avgSpeed = speedReadings.length > 0 ? speedReadings.reduce((a, b) => a + b, 0) / speedReadings.length : 0;
-
                 // Изпращаме известие за излизане
                 await Notifications.scheduleNotificationAsync({
                   content: {
@@ -448,10 +450,6 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                 if (deviceId && exitingSector) {
                   // Импортираме trpcClient динамично за да избегнем circular dependencies
                   const { trpcClient } = await import('@/lib/trpc');
-                  
-                  const speedReadingsStr = await AsyncStorage.getItem('sector-speed-readings');
-                  const speedReadings: number[] = speedReadingsStr ? JSON.parse(speedReadingsStr) : [];
-                  const avgSpeed = speedReadings.length > 0 ? speedReadings.reduce((a, b) => a + b, 0) / speedReadings.length : 0;
                   
                   await trpcClient.violations.save.mutate({
                     device_id: deviceId,
