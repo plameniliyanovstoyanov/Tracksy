@@ -704,19 +704,22 @@ export const useSectorStore = create(
           console.log('  - current-sector:', currentSectorStr ? 'EXISTS' : 'NULL');
           console.log('  - sector-monitor-data:', sectorMonitorDataStr ? 'EXISTS' : 'NULL');
           
-          if (currentSectorStr && sectorMonitorDataStr) {
+          if (currentSectorStr) {
             const currentSectorData = JSON.parse(currentSectorStr);
-            const monitorData = JSON.parse(sectorMonitorDataStr);
+            const monitorData = sectorMonitorDataStr ? JSON.parse(sectorMonitorDataStr) : null;
+            
+            console.log('  - currentSectorData:', currentSectorData);
+            console.log('  - monitorData:', monitorData);
             
             const sector = initialSectors.find(s => s.id === currentSectorData.id);
             
             if (sector) {
-              console.log('Syncing with background task - sector found:', sector.name);
+              console.log('✅ Syncing with background task - sector found:', sector.name);
               
               const state = get();
               
               if (!state.currentSector || state.currentSector.id !== sector.id) {
-                console.log('Setting current sector from background task');
+                console.log('🆕 Setting current sector from background task:', sector.name);
                 
                 const sectorWithRoute = state.sectors.find(s => s.id === sector.id) || sector;
                 
@@ -740,34 +743,40 @@ export const useSectorStore = create(
                 
                 set({
                   currentSector: sector,
-                  sectorEntryTime: monitorData.entryTime || Date.now(),
-                  currentSectorAverageSpeed: monitorData.averageSpeed || 0,
-                  speedReadings: monitorData.speedReadings || [],
-                  predictedAverageSpeed: monitorData.averageSpeed || 0,
-                  willExceedLimit: (monitorData.averageSpeed || 0) > sector.speedLimit,
+                  sectorEntryTime: monitorData?.entryTime || Date.now(),
+                  currentSectorAverageSpeed: monitorData?.averageSpeed || 0,
+                  speedReadings: monitorData?.speedReadings || [],
+                  predictedAverageSpeed: monitorData?.averageSpeed || 0,
+                  willExceedLimit: (monitorData?.averageSpeed || 0) > sector.speedLimit,
                   sectorTotalDistance: totalDistance,
                   distanceTraveled: 0,
-                  recommendedSpeed: monitorData.recommendedSpeed || null,
+                  recommendedSpeed: monitorData?.recommendedSpeed || null,
                   sectorProgress: 0,
                   lastNotificationThreshold: 0,
                   sectorConfirmationCount: 0,
                   exitConfirmationCount: 0,
                 });
+                
+                console.log('✅ Current sector set to:', sector.name);
               } else {
-                console.log('Updating sector data from background task');
-                set({
-                  currentSectorAverageSpeed: monitorData.averageSpeed || state.currentSectorAverageSpeed,
-                  speedReadings: monitorData.speedReadings || state.speedReadings,
-                  predictedAverageSpeed: monitorData.averageSpeed || state.predictedAverageSpeed,
-                  willExceedLimit: (monitorData.averageSpeed || 0) > sector.speedLimit,
-                  recommendedSpeed: monitorData.recommendedSpeed || state.recommendedSpeed,
-                });
+                console.log('🔄 Updating sector data from background task');
+                if (monitorData) {
+                  set({
+                    currentSectorAverageSpeed: monitorData.averageSpeed || state.currentSectorAverageSpeed,
+                    speedReadings: monitorData.speedReadings || state.speedReadings,
+                    predictedAverageSpeed: monitorData.averageSpeed || state.predictedAverageSpeed,
+                    willExceedLimit: (monitorData.averageSpeed || 0) > sector.speedLimit,
+                    recommendedSpeed: monitorData.recommendedSpeed || state.recommendedSpeed,
+                  });
+                }
               }
+            } else {
+              console.log('⚠️ Sector not found in initialSectors:', currentSectorData.id);
             }
           } else {
             const state = get();
             if (state.currentSector) {
-              console.log('Background task has no sector, clearing current sector');
+              console.log('❌ Background task has no sector, clearing current sector');
               set({
                 currentSector: null,
                 sectorEntryTime: null,
@@ -786,7 +795,7 @@ export const useSectorStore = create(
             }
           }
         } catch (error) {
-          console.error('Error syncing with background task:', error);
+          console.error('❌ Error syncing with background task:', error);
         }
       },
     } as SectorActions)

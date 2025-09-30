@@ -44,25 +44,37 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
 
 // Проверка дали точка е близо до сектор
 function isPointNearSector(point: { latitude: number; longitude: number }, sector: SectorCheck, threshold: number = 80): boolean {
+  // Ако има routeCoordinates, проверяваме разстоянието до всеки сегмент от маршрута
+  if (sector.routeCoordinates && sector.routeCoordinates.length > 1) {
+    for (let i = 0; i < sector.routeCoordinates.length - 1; i++) {
+      const lineStart = sector.routeCoordinates[i];
+      const lineEnd = sector.routeCoordinates[i + 1];
+      
+      const distance = distanceToLineSegment(point, lineStart, lineEnd);
+      
+      if (distance < threshold) {
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  // Fallback: проверяваме дали сме близо до началото или края
   const distToStart = getDistance(point.latitude, point.longitude, sector.startPoint.lat, sector.startPoint.lng);
   const distToEnd = getDistance(point.latitude, point.longitude, sector.endPoint.lat, sector.endPoint.lng);
   
-  // Проверяваме дали сме близо до началото или края
   if (distToStart < threshold || distToEnd < threshold) {
     return true;
   }
   
-  // Ако има маршрут, проверяваме дали сме близо до някоя точка от него
-  if (sector.route && sector.route.length > 0) {
-    for (const routePoint of sector.route) {
-      const dist = getDistance(point.latitude, point.longitude, routePoint.lat, routePoint.lng);
-      if (dist < threshold) {
-        return true;
-      }
-    }
-  }
+  // Проверяваме и въображаемата линия между началото и края
+  const distance = distanceToLineSegment(
+    point,
+    [sector.startPoint.lng, sector.startPoint.lat],
+    [sector.endPoint.lng, sector.endPoint.lat]
+  );
   
-  return false;
+  return distance < threshold;
 }
 
 // Функция за изчисляване на разстояние от точка до линия
@@ -377,6 +389,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         
         // Проверяваме дали влизаме в нов сектор
         const newSector = sectorsWithRoutes.find((sector: any) => {
+          if (!sector.active) return false;
+          
           const sectorCheck: SectorCheck = {
             id: sector.id,
             name: sector.name,
@@ -387,8 +401,17 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             routeCoordinates: sector.routeCoordinates,
             route: sector.routeCoordinates ? sector.routeCoordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })) : []
           };
-          return sector.active && isPointNearSector(location.coords, sectorCheck, 80); // По-малък threshold за по-бърза детекция
+          
+          const isNear = isPointNearSector(location.coords, sectorCheck, 80);
+          if (isNear) {
+            console.log(`✅ Found sector nearby: ${sector.name} (ID: ${sector.id})`);
+          }
+          return isNear;
         });
+        
+        if (newSector) {
+          console.log(`🎯 New sector detected: ${newSector.name} (ID: ${newSector.id})`);
+        }
 
         // Ако вече сме в сектор
         if (trackingState.currentSectorId) {
