@@ -58,26 +58,80 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
   const remainingDistance = sectorTotalDistance * (1 - sectorProgress);
   const progressPercentage = Math.round(sectorProgress * 100);
   
-  const isCurrentlyExceeded = currentSectorAverageSpeed > sector.speedLimit;
-  const willExceed = willExceedLimit;
+  // Individual color logic for each speed metric
+  const getCurrentSpeedColor = () => {
+    const limit = sector.speedLimit;
+    if (currentSpeed > limit) return '#ff4444'; // Red - over limit
+    if (currentSpeed >= limit * 0.95) return '#ffaa00'; // Yellow - close to limit
+    return '#00ff88'; // Green - safe
+  };
 
-  // Color logic based on current state
-  const getSpeedColor = () => {
-    if (willExceed) return '#ff4444';
-    if (isCurrentlyExceeded) return '#ff8800';
-    return '#00ff88';
+  const getAverageSpeedColor = () => {
+    const limit = sector.speedLimit;
+    if (currentSectorAverageSpeed > limit) return '#ff4444'; // Red - over limit
+    if (currentSectorAverageSpeed >= limit * 0.95) return '#ffaa00'; // Yellow - close to limit
+    return '#00ff88'; // Green - safe
+  };
+
+  const getPredictedSpeedColor = () => {
+    const limit = sector.speedLimit;
+    if (predictedAverageSpeed > limit) return '#ff4444'; // Red - will exceed
+    if (predictedAverageSpeed >= limit * 0.95) return '#ffaa00'; // Yellow - close to limit
+    return '#00ff88'; // Green - safe
+  };
+
+  // Background color based on average speed
+  const getBackgroundColors = (): [string, string] => {
+    const avgColor = getAverageSpeedColor();
+    if (avgColor === '#ff4444') return ['#3a1a1a', '#2a1010']; // Red background
+    if (avgColor === '#ffaa00') return ['#3a2a1a', '#2a1810']; // Yellow background
+    return ['#1a3a1a', '#102a10']; // Green background
   };
 
   const getProgressColor = () => {
-    if (willExceed) return '#ff4444';
-    if (isCurrentlyExceeded) return '#ff8800';
-    return '#00ff88';
+    return getAverageSpeedColor();
   };
+
+  // Calculate recommended speed to stay under limit
+  const calculateRecommendedSpeed = (): number | null => {
+    if (currentSectorAverageSpeed <= sector.speedLimit && predictedAverageSpeed <= sector.speedLimit) {
+      return null; // No need for recommendation if already safe
+    }
+
+    const remainingDist = sectorTotalDistance * (1 - sectorProgress);
+    const traveledDist = sectorTotalDistance * sectorProgress;
+    
+    if (remainingDist <= 0 || !sectorEntryTime) return null;
+
+    const timeElapsed = (Date.now() - sectorEntryTime) / 1000 / 3600; // hours
+    
+    // Calculate what speed we need for the remaining distance to bring average below limit
+    // avgSpeed = totalDistance / totalTime
+    // We want: (traveledDist + remainingDist) / (timeElapsed + remainingTime) <= speedLimit
+    // Solve for speed in remaining distance: speed = remainingDist / remainingTime
+    
+    const targetAvgSpeed = sector.speedLimit * 0.98; // Target 98% of limit for safety margin
+    const targetTotalTime = sectorTotalDistance / targetAvgSpeed; // hours
+    const remainingTime = targetTotalTime - timeElapsed;
+    
+    if (remainingTime <= 0) return null;
+    
+    const recommendedSpeedCalc = remainingDist / remainingTime;
+    
+    // Only show if it's actually helpful (lower than current speed and positive)
+    if (recommendedSpeedCalc > 0 && recommendedSpeedCalc < currentSpeed) {
+      return recommendedSpeedCalc;
+    }
+    
+    return null;
+  };
+
+  const calculatedRecommendedSpeed = calculateRecommendedSpeed();
 
   return (
     <Animated.View style={[styles.container, { transform: [{ scale: pulseAnim }] }]}>
       <LinearGradient
-        colors={willExceed ? ['#3a1a1a', '#2a1010'] : isCurrentlyExceeded ? ['#3a2a1a', '#2a1810'] : ['#1a3a1a', '#102a10']}
+        colors={getBackgroundColors()}
         style={styles.gradient}
       >
         {/* Header with sector name and limit */}
@@ -94,7 +148,7 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
         {/* Main speed display - like first component */}
         <View style={styles.mainSpeedContainer}>
           <View style={styles.currentSpeedDisplay}>
-            <Text style={[styles.currentSpeedValue, { color: getSpeedColor() }]}>
+            <Text style={[styles.currentSpeedValue, { color: getCurrentSpeedColor() }]}>
               {currentSpeed.toFixed(0)}
             </Text>
             <Text style={styles.speedUnit}>км/ч</Text>
@@ -102,7 +156,7 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
           
           <View style={styles.averageSpeedDisplay}>
             <Text style={styles.averageLabel}>Средна</Text>
-            <Text style={[styles.averageValue, { color: getSpeedColor() }]}>
+            <Text style={[styles.averageValue, { color: getAverageSpeedColor() }]}>
               {currentSectorAverageSpeed.toFixed(1)} км/ч
             </Text>
           </View>
@@ -111,11 +165,11 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
         {/* Stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <TrendingUp color={willExceed ? '#ff4444' : '#ffaa00'} size={14} />
+            <TrendingUp color={getPredictedSpeedColor()} size={14} />
             <Text style={styles.statLabel}>Прогноза</Text>
             <Text style={[
               styles.statValue,
-              { color: willExceed ? '#ff4444' : '#ffaa00' }
+              { color: getPredictedSpeedColor() }
             ]}>
               {predictedAverageSpeed.toFixed(1)} км/ч
             </Text>
@@ -137,11 +191,14 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
           </View>
         </View>
 
-        {/* Recommended speed section - from second component */}
-        {recommendedSpeed !== null && (
+        {/* Recommended speed section - calculated to bring average below limit */}
+        {calculatedRecommendedSpeed !== null && (
           <View style={styles.recommendationContainer}>
             <Text style={styles.recommendationLabel}>
-              Препоръчителна ≤ {recommendedSpeed.toFixed(0)} км/ч
+              💡 Препоръчителна ≤ {calculatedRecommendedSpeed.toFixed(0)} км/ч
+            </Text>
+            <Text style={styles.recommendationSubtext}>
+              За да паднете под лимита
             </Text>
           </View>
         )}
@@ -165,11 +222,11 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
         </View>
 
         {/* Warning section */}
-        {(willExceed || isCurrentlyExceeded) && (
-          <View style={[styles.warning, !willExceed && styles.caution]}>
-            <AlertTriangle color={willExceed ? "#ff4444" : "#ffaa00"} size={16} />
-            <Text style={[styles.warningText, !willExceed && styles.cautionText]}>
-              {willExceed 
+        {(willExceedLimit || currentSectorAverageSpeed > sector.speedLimit) && (
+          <View style={[styles.warning, !willExceedLimit && styles.caution]}>
+            <AlertTriangle color={willExceedLimit ? "#ff4444" : "#ffaa00"} size={16} />
+            <Text style={[styles.warningText, !willExceedLimit && styles.cautionText]}>
+              {willExceedLimit 
                 ? "Ще превишите лимита!" 
                 : "Превишавате лимита!"}
             </Text>
@@ -272,14 +329,22 @@ const styles = StyleSheet.create({
   recommendationContainer: {
     alignItems: 'center',
     marginBottom: 12,
-    padding: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 6,
+    padding: 10,
+    backgroundColor: 'rgba(0, 170, 255, 0.15)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 170, 255, 0.3)',
   },
   recommendationLabel: {
+    color: '#00aaff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  recommendationSubtext: {
     color: '#888',
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '400',
+    marginTop: 2,
   },
   progressContainer: {
     flexDirection: 'row',
