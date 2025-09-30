@@ -1,6 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
 export const [DeviceProvider, useDevice] = createContextHook(() => {
@@ -8,10 +9,10 @@ export const [DeviceProvider, useDevice] = createContextHook(() => {
   const [loading, setLoading] = useState(true);
 
   // Generate or get device ID
-  const generateDeviceId = useCallback((): string => {
+  const generateDeviceId = useCallback(async (): Promise<string> => {
     try {
       // Check if we already have a stored device ID
-      const stored = localStorage?.getItem('device_id') || null;
+      const stored = await AsyncStorage.getItem('device_id');
       if (stored) {
         return stored;
       }
@@ -25,7 +26,7 @@ export const [DeviceProvider, useDevice] = createContextHook(() => {
       
       // Store the generated ID
       try {
-        localStorage?.setItem('device_id', uniqueId);
+        await AsyncStorage.setItem('device_id', uniqueId);
       } catch (e) {
         console.warn('Could not store device ID:', e);
       }
@@ -64,14 +65,16 @@ export const [DeviceProvider, useDevice] = createContextHook(() => {
         .select()
         .single();
 
-      if (error && error.code !== '23505') {
-        console.error('Error creating anonymous user:', error);
+      if (error) {
+        console.warn('Could not create anonymous user record (this is OK if table does not exist):', error.message);
+        return { device_id: deviceId };
       }
       
       return data;
     } catch (error) {
-      console.error('Error in createAnonymousUser:', error);
-      return null;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn('Error in createAnonymousUser (continuing without database record):', errorMessage);
+      return { device_id: deviceId };
     }
   }, []);
 
@@ -92,15 +95,19 @@ export const [DeviceProvider, useDevice] = createContextHook(() => {
   useEffect(() => {
     const initializeDevice = async () => {
       try {
-        const generatedDeviceId = generateDeviceId();
+        const generatedDeviceId = await generateDeviceId();
         setDeviceId(generatedDeviceId);
         
         // Create anonymous user record in database
-        await createAnonymousUser(generatedDeviceId);
+        try {
+          await createAnonymousUser(generatedDeviceId);
+        } catch (error) {
+          console.error('Error creating anonymous user:', error instanceof Error ? error.message : String(error));
+        }
       } catch (error) {
         console.error('Error initializing device:', error);
         // Fallback to just device ID
-        const fallbackId = generateDeviceId();
+        const fallbackId = await generateDeviceId();
         setDeviceId(fallbackId);
       } finally {
         setLoading(false);
