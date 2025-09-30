@@ -23,6 +23,7 @@ interface SectorCheck {
   endPoint: { lat: number; lng: number };
   active: boolean;
   route?: { lat: number; lng: number }[];
+  routeCoordinates?: [number, number][];
 }
 
 // Функция за изчисляване на разстояние между две точки
@@ -363,8 +364,19 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           }
         }
 
+        // Зареждаме маршрутите на секторите от AsyncStorage
+        const sectorsWithRoutesStr = await AsyncStorage.getItem('sectors-with-routes');
+        let sectorsWithRoutes: any[] = sectors;
+        if (sectorsWithRoutesStr) {
+          try {
+            sectorsWithRoutes = JSON.parse(sectorsWithRoutesStr);
+          } catch {
+            console.log('Failed to parse sectors with routes, using default');
+          }
+        }
+        
         // Проверяваме дали влизаме в нов сектор
-        const newSector = sectors.find(sector => {
+        const newSector = sectorsWithRoutes.find((sector: any) => {
           const sectorCheck: SectorCheck = {
             id: sector.id,
             name: sector.name,
@@ -372,7 +384,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             startPoint: sector.startPoint,
             endPoint: sector.endPoint,
             active: sector.active,
-            route: [] // TODO: Parse route from Mapbox if needed
+            routeCoordinates: sector.routeCoordinates,
+            route: sector.routeCoordinates ? sector.routeCoordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })) : []
           };
           return sector.active && isPointNearSector(location.coords, sectorCheck, 80); // По-малък threshold за по-бърза детекция
         });

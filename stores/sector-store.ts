@@ -622,6 +622,14 @@ export const useSectorStore = create(
           
           console.log('All sector routes loaded');
           set({ sectors: loadedSectors });
+          
+          // Запазваме секторите с маршрути в AsyncStorage за background task
+          try {
+            await AsyncStorage.setItem('sectors-with-routes', JSON.stringify(loadedSectors));
+            console.log('Sectors with routes saved to AsyncStorage');
+          } catch (error) {
+            console.error('Failed to save sectors with routes to AsyncStorage:', error);
+          }
         } catch (error) {
           console.error('Error loading sector routes:', error);
           // Fallback to sectors without routes
