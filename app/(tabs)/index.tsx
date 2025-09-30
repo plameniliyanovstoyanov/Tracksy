@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Navigation, Clock, Smartphone } from 'lucide-react-native';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSpeedStore } from '@/stores/speed-store';
 import { useSectorStore } from '@/stores/sector-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -47,6 +48,30 @@ export default function HomeScreen() {
     checkBackgroundTrackingStatus
   } = useSettingsStore();
 
+  const syncSectorStateFromStorage = useCallback(async () => {
+    try {
+      const currentSectorStr = await AsyncStorage.getItem('current-sector');
+      if (!currentSectorStr && currentSector) {
+        console.log('🔄 Background service cleared sector, syncing to foreground...');
+        useSectorStore.setState({
+          currentSector: null,
+          sectorEntryTime: null,
+          currentSectorAverageSpeed: 0,
+          speedReadings: [],
+          predictedAverageSpeed: 0,
+          willExceedLimit: false,
+          sectorProgress: 0,
+          lastNotificationThreshold: 0,
+          sectorTotalDistance: 0,
+          distanceTraveled: 0,
+          recommendedSpeed: null
+        });
+      }
+    } catch (error) {
+      console.error('Error syncing sector state:', error);
+    }
+  }, [currentSector]);
+
   const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
     setLocation(location);
     const speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
@@ -55,7 +80,18 @@ export default function HomeScreen() {
     updateSectorProgress(location.coords);
     checkSectorEntry(location.coords);
     checkSectorExit(location.coords);
-  }, [updateSpeed, updateSectorSpeed, updateSectorProgress, checkSectorEntry, checkSectorExit]);
+    syncSectorStateFromStorage();
+  }, [updateSpeed, updateSectorSpeed, updateSectorProgress, checkSectorEntry, checkSectorExit, syncSectorStateFromStorage]);
+
+  useEffect(() => {
+    const syncInterval = setInterval(() => {
+      syncSectorStateFromStorage();
+    }, 2000);
+
+    return () => {
+      clearInterval(syncInterval);
+    };
+  }, [syncSectorStateFromStorage]);
 
   useEffect(() => {
     let subscription: Location.LocationSubscription | null = null;
