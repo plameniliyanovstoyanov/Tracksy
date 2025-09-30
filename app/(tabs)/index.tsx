@@ -25,6 +25,7 @@ export default function HomeScreen() {
   
   const { 
     currentSpeed, 
+    averageSpeed,
     updateSpeed, 
     startTracking, 
     stopTracking
@@ -300,7 +301,17 @@ export default function HomeScreen() {
             ) : (
               <View style={styles.noSectorContainer}>
                 <Text style={styles.noSectorText}>Няма активен сектор</Text>
-                <Text style={styles.currentSpeedOnly}>{currentSpeed.toFixed(0)} км/ч</Text>
+                <View style={styles.speedRow}>
+                  <View style={styles.speedItem}>
+                    <Text style={styles.speedLabel}>Текуща</Text>
+                    <Text style={styles.currentSpeedOnly}>{currentSpeed.toFixed(0)} км/ч</Text>
+                  </View>
+                  <View style={styles.speedDivider} />
+                  <View style={styles.speedItem}>
+                    <Text style={styles.speedLabel}>Средна</Text>
+                    <Text style={styles.averageSpeedOnly}>{averageSpeed.toFixed(0)} км/ч</Text>
+                  </View>
+                </View>
               </View>
             )}
           </View>
@@ -403,10 +414,33 @@ const styles = StyleSheet.create({
   noSectorText: {
     color: '#888',
     fontSize: 14,
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  speedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+  },
+  speedItem: {
+    alignItems: 'center',
+  },
+  speedLabel: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  speedDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   currentSpeedOnly: {
     color: '#fff',
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  averageSpeedOnly: {
+    color: '#00ff88',
     fontSize: 32,
     fontWeight: 'bold',
   },
