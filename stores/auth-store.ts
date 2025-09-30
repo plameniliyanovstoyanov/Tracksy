@@ -84,7 +84,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       
       return data;
     } catch (error) {
-      console.warn('Error in createAnonymousUser (continuing without database record):', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn('Error in createAnonymousUser (continuing without database record):', errorMessage);
       return { device_id: deviceId }; // Return minimal data
     }
   }, []);
@@ -106,7 +107,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           setDeviceId(generatedDeviceId);
           
           // Create anonymous user record in database
-          await createAnonymousUser(generatedDeviceId);
+          try {
+            await createAnonymousUser(generatedDeviceId);
+          } catch (error) {
+            console.error('Error creating anonymous user:', error instanceof Error ? error.message : String(error));
+          }
           setIsAnonymous(true);
         }
       } catch (error) {
@@ -135,15 +140,19 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         // Switch back to anonymous mode
         const generatedDeviceId = await generateDeviceId();
         setDeviceId(generatedDeviceId);
-        await createAnonymousUser(generatedDeviceId);
+        try {
+          await createAnonymousUser(generatedDeviceId);
+        } catch (error) {
+          console.error('Error creating anonymous user on auth change:', error instanceof Error ? error.message : String(error));
+        }
         setIsAnonymous(true);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [createAnonymousUser, generateDeviceId]);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = useCallback(async () => {
     try {
       setLoading(true);
       const redirectTo = getRedirectUrl();
@@ -193,9 +202,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const signInWithApple = async () => {
+  const signInWithApple = useCallback(async () => {
     try {
       setLoading(true);
       const redirectTo = getRedirectUrl();
@@ -245,9 +254,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const signInWithFacebook = async () => {
+  const signInWithFacebook = useCallback(async () => {
     try {
       setLoading(true);
       const redirectTo = getRedirectUrl();
@@ -297,11 +306,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
 
 
-  const signInAsAdmin = () => {
+  const signInAsAdmin = useCallback(() => {
     // Create a mock admin session
     const adminSession = {
       access_token: 'admin-token',
@@ -323,9 +332,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     setUser(adminSession.user);
     setIsAdmin(true);
     setLoading(false);
-  };
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -351,18 +360,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAdmin]);
 
   // Get current user identifier (either user ID or device ID)
-  const getCurrentUserId = (): string | null => {
+  const getCurrentUserId = useCallback((): string | null => {
     if (user?.id) {
       return user.id;
     }
     return deviceId;
-  };
+  }, [user?.id, deviceId]);
 
   // Update last seen for anonymous users
-  const updateLastSeen = async () => {
+  const updateLastSeen = useCallback(async () => {
     if (isAnonymous && deviceId) {
       try {
         await supabase
@@ -374,9 +383,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         console.warn('Could not update last seen (table may not exist):', error);
       }
     }
-  };
+  }, [isAnonymous, deviceId]);
 
-  return {
+  return useMemo(() => ({
     session,
     user,
     loading,
@@ -391,5 +400,19 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     signInWithFacebook,
     signInAsAdmin,
     signOut,
-  };
+  }), [
+    session,
+    user,
+    loading,
+    isAdmin,
+    isAnonymous,
+    deviceId,
+    getCurrentUserId,
+    updateLastSeen,
+    signInWithGoogle,
+    signInWithApple,
+    signInWithFacebook,
+    signInAsAdmin,
+    signOut,
+  ]);
 });
