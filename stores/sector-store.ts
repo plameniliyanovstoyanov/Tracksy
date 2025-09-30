@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { fetchSectorRoute } from '@/utils/mapbox-directions';
 import { trpcClient } from '@/lib/trpc';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Location {
   latitude: number;
@@ -55,6 +56,7 @@ interface SectorActions {
   loadFromStorage: () => Promise<void>;
   addToHistory: (entry: SectorHistoryEntry) => void;
   saveViolationToDatabase: (entry: SectorHistoryEntry, location: Location, deviceId: string) => Promise<void>;
+  syncWithBackgroundTask: () => Promise<void>;
 }
 
 // Функция за изчисляване на разстояние между две точки
@@ -682,6 +684,101 @@ export const useSectorStore = create(
         } catch (error) {
           console.error('Error saving violation to database:', error);
           // Don't throw error to avoid breaking the app flow
+        }
+      },
+      
+      syncWithBackgroundTask: async () => {
+        try {
+          const currentSectorStr = await AsyncStorage.getItem('current-sector');
+          const sectorMonitorDataStr = await AsyncStorage.getItem('sector-monitor-data');
+          
+          console.log('🔄 Syncing with background task...');
+          console.log('  - current-sector:', currentSectorStr ? 'EXISTS' : 'NULL');
+          console.log('  - sector-monitor-data:', sectorMonitorDataStr ? 'EXISTS' : 'NULL');
+          
+          if (currentSectorStr && sectorMonitorDataStr) {
+            const currentSectorData = JSON.parse(currentSectorStr);
+            const monitorData = JSON.parse(sectorMonitorDataStr);
+            
+            const sector = initialSectors.find(s => s.id === currentSectorData.id);
+            
+            if (sector) {
+              console.log('Syncing with background task - sector found:', sector.name);
+              
+              const state = get();
+              
+              if (!state.currentSector || state.currentSector.id !== sector.id) {
+                console.log('Setting current sector from background task');
+                
+                const sectorWithRoute = state.sectors.find(s => s.id === sector.id) || sector;
+                
+                let totalDistance = 0;
+                const sectorWithRouteTyped = sectorWithRoute as SectorWithRoute;
+                
+                if (sectorWithRouteTyped.routeCoordinates && sectorWithRouteTyped.routeCoordinates.length > 1) {
+                  for (let i = 0; i < sectorWithRouteTyped.routeCoordinates.length - 1; i++) {
+                    const [lng1, lat1] = sectorWithRouteTyped.routeCoordinates[i];
+                    const [lng2, lat2] = sectorWithRouteTyped.routeCoordinates[i + 1];
+                    totalDistance += getDistance(lat1, lng1, lat2, lng2);
+                  }
+                } else {
+                  totalDistance = getDistance(
+                    sector.startPoint.lat,
+                    sector.startPoint.lng,
+                    sector.endPoint.lat,
+                    sector.endPoint.lng
+                  );
+                }
+                
+                set({
+                  currentSector: sector,
+                  sectorEntryTime: monitorData.entryTime || Date.now(),
+                  currentSectorAverageSpeed: monitorData.averageSpeed || 0,
+                  speedReadings: monitorData.speedReadings || [],
+                  predictedAverageSpeed: monitorData.averageSpeed || 0,
+                  willExceedLimit: (monitorData.averageSpeed || 0) > sector.speedLimit,
+                  sectorTotalDistance: totalDistance,
+                  distanceTraveled: 0,
+                  recommendedSpeed: monitorData.recommendedSpeed || null,
+                  sectorProgress: 0,
+                  lastNotificationThreshold: 0,
+                  sectorConfirmationCount: 0,
+                  exitConfirmationCount: 0,
+                });
+              } else {
+                console.log('Updating sector data from background task');
+                set({
+                  currentSectorAverageSpeed: monitorData.averageSpeed || state.currentSectorAverageSpeed,
+                  speedReadings: monitorData.speedReadings || state.speedReadings,
+                  predictedAverageSpeed: monitorData.averageSpeed || state.predictedAverageSpeed,
+                  willExceedLimit: (monitorData.averageSpeed || 0) > sector.speedLimit,
+                  recommendedSpeed: monitorData.recommendedSpeed || state.recommendedSpeed,
+                });
+              }
+            }
+          } else {
+            const state = get();
+            if (state.currentSector) {
+              console.log('Background task has no sector, clearing current sector');
+              set({
+                currentSector: null,
+                sectorEntryTime: null,
+                currentSectorAverageSpeed: 0,
+                speedReadings: [],
+                predictedAverageSpeed: 0,
+                willExceedLimit: false,
+                sectorProgress: 0,
+                lastNotificationThreshold: 0,
+                sectorTotalDistance: 0,
+                distanceTraveled: 0,
+                recommendedSpeed: null,
+                sectorConfirmationCount: 0,
+                exitConfirmationCount: 0,
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error syncing with background task:', error);
         }
       },
     } as SectorActions)
