@@ -7,15 +7,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Navigation, Clock, Smartphone } from 'lucide-react-native';
+import { MapPin, Navigation, Clock } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useSpeedStore } from '@/stores/speed-store';
 import { useSectorStore } from '@/stores/sector-store';
-import { useSettingsStore } from '@/stores/settings-store';
 import { UnifiedSectorDisplay } from '@/components/UnifiedSectorDisplay';
 import { MapViewComponent } from '@/components/MapView';
-import { BackgroundTrackingStatus } from '@/components/BackgroundTrackingStatus';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
+import { useDevice } from '@/stores/device-store';
 
 export default function HomeScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -36,44 +35,30 @@ export default function HomeScreen() {
     updateSectorSpeed,
     updateSectorProgress,
     initializeNotifications,
-    syncWithBackgroundTask
+    checkSectorEntry,
+    checkSectorExit,
+    loadSectorRoutes
   } = useSectorStore();
   
-  const {
-    backgroundTrackingEnabled,
-    backgroundTrackingActive,
-    startBackgroundTracking,
-    checkBackgroundTrackingStatus
-  } = useSettingsStore();
-
-  const syncSectorStateFromStorage = useCallback(async () => {
-    try {
-      await syncWithBackgroundTask();
-    } catch (error) {
-      console.error('Error syncing sector state:', error);
-    }
-  }, [syncWithBackgroundTask]);
+  const { deviceId } = useDevice();
 
   const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
     setLocation(location);
     const speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
     updateSpeed(speed);
     
+    checkSectorEntry(location.coords);
+    checkSectorExit(location.coords, deviceId || undefined);
+    
     if (currentSector) {
       updateSectorSpeed(speed);
       updateSectorProgress(location.coords);
     }
-  }, [updateSpeed, updateSectorSpeed, updateSectorProgress, currentSector]);
+  }, [updateSpeed, updateSectorSpeed, updateSectorProgress, currentSector, checkSectorEntry, checkSectorExit, deviceId]);
 
   useEffect(() => {
-    const syncInterval = setInterval(() => {
-      syncSectorStateFromStorage();
-    }, 1000);
-
-    return () => {
-      clearInterval(syncInterval);
-    };
-  }, [syncSectorStateFromStorage]);
+    loadSectorRoutes();
+  }, [loadSectorRoutes]);
 
   useEffect(() => {
     let subscription: Location.LocationSubscription | null = null;
@@ -205,13 +190,6 @@ export default function HomeScreen() {
           return;
         }
 
-        // Check and start background tracking if enabled
-        await checkBackgroundTrackingStatus();
-        if (backgroundTrackingEnabled) {
-          console.log('🔄 Starting background tracking...');
-          await startBackgroundTracking();
-        }
-
         startTracking();
         
         console.log('👀 Starting location watching...');
@@ -247,7 +225,7 @@ export default function HomeScreen() {
       }
       stopTracking();
     };
-  }, [startTracking, stopTracking, handleLocationUpdate, initializeNotifications, backgroundTrackingEnabled, startBackgroundTracking, checkBackgroundTrackingStatus]);
+  }, [startTracking, stopTracking, handleLocationUpdate, initializeNotifications]);
 
   if (errorMsg) {
     return (
@@ -297,12 +275,7 @@ export default function HomeScreen() {
                 })}
               </Text>
             </View>
-            {backgroundTrackingActive && (
-              <View style={styles.statusItem}>
-                <Smartphone color="#ff8800" size={16} />
-                <Text style={[styles.statusText, { color: '#ff8800' }]}>BG</Text>
-              </View>
-            )}
+
           </View>
         </View>
 
@@ -312,8 +285,6 @@ export default function HomeScreen() {
           </View>
           
           <View style={styles.bottomSection}>
-            <BackgroundTrackingStatus />
-            
             {currentSector ? (
               <UnifiedSectorDisplay sector={currentSector} />
             ) : (
