@@ -92,41 +92,8 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
     return getAverageSpeedColor();
   };
 
-  // Calculate recommended speed to stay under limit
-  const calculateRecommendedSpeed = (): number | null => {
-    if (currentSectorAverageSpeed <= sector.speedLimit && predictedAverageSpeed <= sector.speedLimit) {
-      return null; // No need for recommendation if already safe
-    }
-
-    const remainingDist = sectorTotalDistance * (1 - sectorProgress);
-    const traveledDist = sectorTotalDistance * sectorProgress;
-    
-    if (remainingDist <= 0 || !sectorEntryTime) return null;
-
-    const timeElapsed = (Date.now() - sectorEntryTime) / 1000 / 3600; // hours
-    
-    // Calculate what speed we need for the remaining distance to bring average below limit
-    // avgSpeed = totalDistance / totalTime
-    // We want: (traveledDist + remainingDist) / (timeElapsed + remainingTime) <= speedLimit
-    // Solve for speed in remaining distance: speed = remainingDist / remainingTime
-    
-    const targetAvgSpeed = sector.speedLimit * 0.98; // Target 98% of limit for safety margin
-    const targetTotalTime = sectorTotalDistance / targetAvgSpeed; // hours
-    const remainingTime = targetTotalTime - timeElapsed;
-    
-    if (remainingTime <= 0) return null;
-    
-    const recommendedSpeedCalc = remainingDist / remainingTime;
-    
-    // Only show if it's actually helpful (lower than current speed and positive)
-    if (recommendedSpeedCalc > 0 && recommendedSpeedCalc < currentSpeed) {
-      return recommendedSpeedCalc;
-    }
-    
-    return null;
-  };
-
-  const calculatedRecommendedSpeed = calculateRecommendedSpeed();
+  // Use recommended speed from store
+  const shouldShowRecommendation = recommendedSpeed !== null && currentSectorAverageSpeed > sector.speedLimit;
 
   return (
     <Animated.View style={[styles.container, { transform: [{ scale: pulseAnim }] }]}>
@@ -191,17 +158,23 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
           </View>
         </View>
 
-        {/* Recommended speed section - calculated to bring average below limit */}
-        {calculatedRecommendedSpeed !== null && (
+        {/* Recommended speed section */}
+        {shouldShowRecommendation ? (
           <View style={styles.recommendationContainer}>
             <Text style={styles.recommendationLabel}>
-              💡 Препоръчителна ≤ {calculatedRecommendedSpeed.toFixed(0)} км/ч
+              💡 Препоръчителна ≤ {recommendedSpeed} км/ч
             </Text>
             <Text style={styles.recommendationSubtext}>
               За да паднете под лимита
             </Text>
           </View>
-        )}
+        ) : currentSectorAverageSpeed <= sector.speedLimit && currentSectorAverageSpeed > 0 ? (
+          <View style={[styles.recommendationContainer, styles.okContainer]}>
+            <Text style={styles.okLabel}>
+              ✅ Всичко е наред - под лимита сте
+            </Text>
+          </View>
+        ) : null}
 
         {/* Progress bar - from second component */}
         <View style={styles.progressContainer}>
@@ -390,5 +363,14 @@ const styles = StyleSheet.create({
   },
   cautionText: {
     color: '#ffaa00',
+  },
+  okContainer: {
+    backgroundColor: 'rgba(0, 255, 136, 0.15)',
+    borderColor: 'rgba(0, 255, 136, 0.3)',
+  },
+  okLabel: {
+    color: '#00ff88',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

@@ -442,29 +442,33 @@ export const useSectorStore = create(
             const recentAvg = recentReadings.reduce((a, b) => a + b, 0) / recentReadings.length;
             const predicted = avgSpeed * 0.7 + recentAvg * 0.3; // Weighted prediction
             
-            // Calculate recommended speed if we're exceeding
+            // Calculate recommended speed
             let recommendedSpeed: number | null = null;
+            
+            // Only calculate if we're exceeding the limit
             if (avgSpeed > state.currentSector.speedLimit) {
-              // Calculate remaining distance (accounting for camera position 150m before end)
               const remainingDistance = Math.max(0, state.sectorTotalDistance - state.distanceTraveled - 150);
-              const elapsedTime = (Date.now() - state.sectorEntryTime) / 1000 / 3600; // hours
               const distanceCoveredKm = state.distanceTraveled / 1000;
-              
-              // Calculate required speed to achieve target average (slightly under limit)
-              const targetAvg = state.currentSector.speedLimit - 2; // 2 km/h safety margin
               const remainingDistanceKm = remainingDistance / 1000;
+              const totalDistanceKm = state.sectorTotalDistance / 1000;
               
-              if (remainingDistanceKm > 0) {
-                // Speed = (Target * Total - Current * Covered) / Remaining
-                const totalDistanceKm = state.sectorTotalDistance / 1000;
-                recommendedSpeed = Math.max(0, 
-                  (targetAvg * totalDistanceKm - avgSpeed * distanceCoveredKm) / remainingDistanceKm
-                );
+              if (remainingDistanceKm > 0.1) { // At least 100m remaining
+                // Target average slightly under limit for safety
+                const targetAvg = state.currentSector.speedLimit - 1;
                 
-                // Cap at reasonable minimum (don't recommend going too slow)
-                recommendedSpeed = Math.max(recommendedSpeed, state.currentSector.speedLimit - 20);
+                // Calculate required speed: (Target * Total - Current * Covered) / Remaining
+                const requiredSpeed = (targetAvg * totalDistanceKm - avgSpeed * distanceCoveredKm) / remainingDistanceKm;
+                
+                // Only recommend if it's realistic (not too low)
+                if (requiredSpeed >= (state.currentSector.speedLimit - 15)) {
+                  recommendedSpeed = Math.round(requiredSpeed);
+                } else {
+                  // If required speed is too low, it's impossible to recover
+                  recommendedSpeed = null; // Will show "Няма как да паднете под лимита"
+                }
               }
             }
+            // If avgSpeed <= speedLimit, don't show any recommendation (we're already good)
             
             set({ 
               speedReadings: newReadings,
