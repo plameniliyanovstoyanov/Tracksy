@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Speed Tracker for Bulgarian Highways",
-    "slug": "speed-tracker-bulgarian-highways",
+    "name": "Tracksy",
+    "slug": "tracksy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.rork.speed-tracker-bulgarian-highways",
+      "bundleIdentifier": "bg.tracksy.app",
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
@@ -42,7 +42,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "app.rork.speed-tracker-bulgarian-highways",
+      "package": "bg.tracksy.app",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
