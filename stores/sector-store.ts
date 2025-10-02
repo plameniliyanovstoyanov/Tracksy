@@ -568,7 +568,7 @@ export const useSectorStore = create(
                       averageSpeed: currentSectorAverageSpeed,
                       recommendedSpeed
                     },
-                    sound: isExceeding ? 'default' : undefined,
+                    ...(isExceeding ? { sound: 'default' } : {}),
                   },
                   trigger: null,
                 }).catch(error => {
