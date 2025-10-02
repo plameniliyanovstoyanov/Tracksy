@@ -24,17 +24,6 @@
           "location",
           "background-processing"
         ]
-      },
-      "entitlements": {
-        "com": {
-          "apple": {
-            "developer": {
-              "networking": {
-                "wifi-info": true
-              }
-            }
-          }
-        }
       }
     },
     "android": {
@@ -78,9 +67,6 @@
           "icon": "./local/assets/notification_icon.png",
           "color": "#ffffff",
           "defaultChannel": "default",
-          "sounds": [
-            "./local/assets/notification_sound.wav"
-          ],
           "enableBackgroundRemoteNotifications": false
         }
       ]

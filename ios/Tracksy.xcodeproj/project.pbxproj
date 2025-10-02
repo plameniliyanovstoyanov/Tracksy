@@ -62,8 +62,23 @@
 		F11748442D0722820044C1D9 /* SpeedTrackerforBulgarianHighways-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "SpeedTrackerforBulgarianHighways-Bridging-Header.h"; path = "SpeedTrackerforBulgarianHighways/SpeedTrackerforBulgarianHighways-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+<<<<<<< Updated upstream
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6F599E6B2E8F096000BE1E94 /* Live Activity */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Live Activity"; sourceTree = "<group>"; };
+=======
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		6F599E7C2E8F096300BE1E94 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 6F599E652E8F096000BE1E94 /* Live ActivityExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		6F599E6B2E8F096000BE1E94 /* Live Activity */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (6F599E7C2E8F096300BE1E94 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Live Activity"; sourceTree = "<group>"; };
+>>>>>>> Stashed changes
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
