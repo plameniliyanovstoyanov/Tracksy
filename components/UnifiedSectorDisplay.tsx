@@ -93,7 +93,7 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
   };
 
   // Use recommended speed from store
-  const shouldShowRecommendation = recommendedSpeed !== null && currentSectorAverageSpeed > sector.speedLimit;
+  const shouldShowRecommendation = recommendedSpeed !== null && recommendedSpeed > 0 && currentSectorAverageSpeed > sector.speedLimit;
 
   return (
     <Animated.View style={[styles.container, { transform: [{ scale: pulseAnim }] }]}>
@@ -159,16 +159,27 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
         </View>
 
         {/* Recommended speed section */}
-        {shouldShowRecommendation ? (
-          <View style={styles.recommendationContainer}>
-            <Text style={styles.recommendationLabel}>
-              💡 Препоръчителна ≤ {recommendedSpeed} км/ч
-            </Text>
-            <Text style={styles.recommendationSubtext}>
-              За да паднете под лимита
-            </Text>
-          </View>
-        ) : currentSectorAverageSpeed <= sector.speedLimit && currentSectorAverageSpeed > 0 ? (
+        {currentSectorAverageSpeed > sector.speedLimit ? (
+          shouldShowRecommendation ? (
+            <View style={styles.recommendationContainer}>
+              <Text style={styles.recommendationLabel}>
+                💡 Препоръчителна ≤ {recommendedSpeed} км/ч
+              </Text>
+              <Text style={styles.recommendationSubtext}>
+                За да паднете под лимита
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.recommendationContainer, styles.impossibleContainer]}>
+              <Text style={styles.impossibleLabel}>
+                ⚠️ Няма как да паднете под лимита
+              </Text>
+              <Text style={styles.recommendationSubtext}>
+                Твърде късно за корекция
+              </Text>
+            </View>
+          )
+        ) : currentSectorAverageSpeed > 0 ? (
           <View style={[styles.recommendationContainer, styles.okContainer]}>
             <Text style={styles.okLabel}>
               ✅ Всичко е наред - под лимита сте
@@ -370,6 +381,15 @@ const styles = StyleSheet.create({
   },
   okLabel: {
     color: '#00ff88',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  impossibleContainer: {
+    backgroundColor: 'rgba(255, 68, 68, 0.15)',
+    borderColor: 'rgba(255, 68, 68, 0.3)',
+  },
+  impossibleLabel: {
+    color: '#ff4444',
     fontSize: 14,
     fontWeight: '600',
   },

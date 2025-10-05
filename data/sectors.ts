@@ -687,7 +687,7 @@ export const sectors: Sector[] = [
     id: '32',
     name: 'Бул. България - посока 1',
     route: 'Бул. България',
-    speedLimit: 50,
+    speedLimit: 65,
     distance: 2.0,
     description: 'Тестов сектор на бул. България - посока 1.',
     startPoint: {
@@ -707,7 +707,7 @@ export const sectors: Sector[] = [
     id: '33',
     name: 'Бул. България - посока 2',
     route: 'Бул. България',
-    speedLimit: 50,
+    speedLimit: 65,
     distance: 2.0,
     description: 'Тестов сектор на бул. България - посока 2.',
     startPoint: {

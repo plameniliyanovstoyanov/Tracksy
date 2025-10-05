@@ -447,22 +447,23 @@ export const useSectorStore = create(
             
             // Only calculate if we're exceeding the limit
             if (avgSpeed > state.currentSector.speedLimit) {
-              const remainingDistance = Math.max(0, state.sectorTotalDistance - state.distanceTraveled - 150);
+              const remainingDistance = Math.max(0, state.sectorTotalDistance - state.distanceTraveled);
               const distanceCoveredKm = state.distanceTraveled / 1000;
               const remainingDistanceKm = remainingDistance / 1000;
               const totalDistanceKm = state.sectorTotalDistance / 1000;
               
-              if (remainingDistanceKm > 0.1) { // At least 100m remaining
-                // Target average slightly under limit for safety
-                const targetAvg = state.currentSector.speedLimit - 1;
+              if (remainingDistanceKm > 0.05) { // At least 50m remaining
+                // Target average at the limit (not below)
+                const targetAvg = state.currentSector.speedLimit;
                 
                 // Calculate required speed: (Target * Total - Current * Covered) / Remaining
                 const requiredSpeed = (targetAvg * totalDistanceKm - avgSpeed * distanceCoveredKm) / remainingDistanceKm;
                 
-                // Only recommend if it's realistic (not too low)
-                if (requiredSpeed >= (state.currentSector.speedLimit - 15)) {
+                // Only recommend if it's realistic (not too low and not negative)
+                const minRealisticSpeed = Math.max(0, state.currentSector.speedLimit - 20);
+                if (requiredSpeed >= minRealisticSpeed && requiredSpeed < state.currentSector.speedLimit) {
                   recommendedSpeed = Math.round(requiredSpeed);
-                } else {
+                } else if (requiredSpeed < minRealisticSpeed) {
                   // If required speed is too low, it's impossible to recover
                   recommendedSpeed = null; // Will show "Няма как да паднете под лимита"
                 }
