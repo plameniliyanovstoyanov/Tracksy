@@ -39,18 +39,23 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           
           try {
             const route = await fetchSectorRoute(sector);
-            if (route && route.length > 2) { // Only use routes with more than 2 points
+            if (route && route.length > 2) {
               console.log(`✅ Route loaded for ${sector.name}: ${route.length} points`);
               routes[sector.id] = route;
             } else {
-              console.log(`⚠️ No valid route data for ${sector.name}, skipping sector visualization`);
-              // Don't add straight lines - skip this sector entirely
-              // This will prevent showing incorrect straight lines
+              console.log(`⚠️ No valid route data for ${sector.name}, using straight line`);
+              routes[sector.id] = [
+                [sector.startPoint.lng, sector.startPoint.lat],
+                [sector.endPoint.lng, sector.endPoint.lat]
+              ];
             }
           } catch (error) {
             console.log(`❌ Error loading route for ${sector.name}:`, error);
-            // Don't add fallback straight lines
-            console.log(`🚫 Skipping visualization for ${sector.name} due to route fetch error`);
+            console.log(`📍 Using straight line fallback for ${sector.name}`);
+            routes[sector.id] = [
+              [sector.startPoint.lng, sector.startPoint.lat],
+              [sector.endPoint.lng, sector.endPoint.lat]
+            ];
           }
           
           // Add delay between requests to avoid rate limiting
@@ -60,9 +65,15 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         }
       } catch (error) {
         console.error('💥 Error in loadRoutes:', error);
-        // Don't create fallback straight line routes
-        // Better to show no route than incorrect straight lines
-        console.log('🚫 Skipping fallback routes to avoid showing incorrect straight lines');
+        console.log('📍 Creating fallback straight line routes for all sectors');
+        sectors.forEach(sector => {
+          if (!routes[sector.id]) {
+            routes[sector.id] = [
+              [sector.startPoint.lng, sector.startPoint.lat],
+              [sector.endPoint.lng, sector.endPoint.lat]
+            ];
+          }
+        });
       }
       
       console.log('🎉 All routes processing complete!');
@@ -333,13 +344,11 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
               const coordinates = routes[sector.id];
               console.log('📍 Sector ' + sector.name + ': ' + (coordinates ? coordinates.length : 0) + ' coordinates');
               
-              // Only include sectors that have proper route data
-              if (!coordinates || !Array.isArray(coordinates) || coordinates.length < 3) {
-                console.log('⚠️ Insufficient coordinates for ' + sector.name + ', skipping sector visualization');
-                return null; // Skip this sector entirely
+              if (!coordinates || !Array.isArray(coordinates) || coordinates.length < 2) {
+                console.log('⚠️ No coordinates for ' + sector.name + ', skipping');
+                return null;
               }
               
-              // Filter out invalid coordinates
               const validCoordinates = coordinates.filter(coord => 
                 Array.isArray(coord) && 
                 coord.length === 2 && 
@@ -348,9 +357,9 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
                 !isNaN(coord[0]) && !isNaN(coord[1])
               );
               
-              if (validCoordinates.length < 3) {
-                console.log('⚠️ Not enough valid coordinates for ' + sector.name + ', skipping sector visualization');
-                return null; // Skip this sector entirely
+              if (validCoordinates.length < 2) {
+                console.log('⚠️ Not enough valid coordinates for ' + sector.name);
+                return null;
               }
               
               console.log('✅ Using ' + validCoordinates.length + ' coordinates for ' + sector.name);
@@ -385,15 +394,14 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           }
         };
         
-        // Function to add markers only for sectors with valid routes
+        // Function to add markers for all sectors
         window.addSectorMarkers = function(sectorsData, routes) {
-          console.log('🏷️ Adding markers for sectors with valid routes');
+          console.log('🏷️ Adding markers for all sectors');
           
           sectorsData.forEach(sector => {
             const coordinates = routes[sector.id];
             
-            // Only add markers for sectors that have valid route data
-            if (coordinates && Array.isArray(coordinates) && coordinates.length >= 3) {
+            if (coordinates && Array.isArray(coordinates) && coordinates.length >= 2) {
               // Start marker
               const startEl = document.createElement('div');
               startEl.style.width = '12px';
@@ -428,7 +436,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
               
               console.log('✅ Added markers for ' + sector.name);
             } else {
-              console.log('⚠️ Skipping markers for ' + sector.name + ' (no valid route)');
+              console.log('⚠️ No coordinates for ' + sector.name + ', skipping markers');
             }
           });
         };
