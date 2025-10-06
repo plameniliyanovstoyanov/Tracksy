@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface SpeedState {
   currentSpeed: number;
+  lastNonZeroSpeed: number;
   averageSpeed: number;
   maxSpeed: number;
   isTracking: boolean;
@@ -24,6 +25,7 @@ export const useSpeedStore = create(
   combine(
     {
       currentSpeed: 0,
+      lastNonZeroSpeed: 0,
       averageSpeed: 0,
       maxSpeed: 0,
       isTracking: false,
@@ -37,8 +39,12 @@ export const useSpeedStore = create(
         const newMaxSpeed = Math.max(state.maxSpeed, speed);
         const newAverageSpeed = newSpeedHistory.reduce((sum, s) => sum + s, 0) / newSpeedHistory.length;
 
+        const displaySpeed = speed > 0 ? speed : state.lastNonZeroSpeed;
+        const lastNonZero = speed > 0 ? speed : state.lastNonZeroSpeed;
+
         set({
-          currentSpeed: speed,
+          currentSpeed: displaySpeed,
+          lastNonZeroSpeed: lastNonZero,
           averageSpeed: newAverageSpeed,
           maxSpeed: newMaxSpeed,
           speedHistory: newSpeedHistory,
@@ -69,6 +75,7 @@ export const useSpeedStore = create(
       resetStats: () => {
         set({
           currentSpeed: 0,
+          lastNonZeroSpeed: 0,
           averageSpeed: 0,
           maxSpeed: 0,
           speedHistory: [],
