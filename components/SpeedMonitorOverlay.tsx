@@ -103,10 +103,10 @@ export const SpeedMonitorOverlay: React.FC<SpeedMonitorOverlayProps> = ({
   };
 
   const getRecommendationText = (): string => {
-    if (!data.recommendedSpeed) return '';
+    if (data.recommendedSpeed === null) return '';
     
-    if (data.recommendedSpeed < 0) {
-      return 'Превишили сте средната скорост! Спрете или карайте много бавно!';
+    if (data.recommendedSpeed === -1) {
+      return 'Спрете и изчакайте за да намалите средната скорост';
     }
     
     if (data.recommendedSpeed < data.currentSpeed - 10) {

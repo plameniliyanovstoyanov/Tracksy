@@ -44,6 +44,7 @@ interface SectorState {
   sectorTotalDistance: number; // Total distance of the sector route in meters
   distanceTraveled: number; // Distance traveled in current sector
   recommendedSpeed: number | null; // Recommended speed to stay within limit
+  lastSpeedUpdateTime: number | null; // Last time we updated speed for time-based average calculation
 }
 
 interface SectorActions {
@@ -222,6 +223,7 @@ export const useSectorStore = create(
       sectorTotalDistance: 0,
       distanceTraveled: 0,
       recommendedSpeed: null as number | null,
+      lastSpeedUpdateTime: null as number | null,
     } as SectorState,
     (set, get) => ({
       initializeNotifications: async () => {
@@ -306,7 +308,8 @@ export const useSectorStore = create(
                 lastNotificationThreshold: 0,
                 sectorTotalDistance: totalDistance,
                 distanceTraveled: 0,
-                recommendedSpeed: null
+                recommendedSpeed: null,
+                lastSpeedUpdateTime: Date.now()
               });
               
               // Изпращаме известие
@@ -422,7 +425,8 @@ export const useSectorStore = create(
               lastNotificationThreshold: 0,
               sectorTotalDistance: 0,
               distanceTraveled: 0,
-              recommendedSpeed: null
+              recommendedSpeed: null,
+              lastSpeedUpdateTime: null
             });
           } else {
             // Увеличаваме брояча за излизане
@@ -438,8 +442,20 @@ export const useSectorStore = create(
         
         try {
           if (state.currentSector && state.sectorEntryTime) {
+            const now = Date.now();
             const newReadings = [...state.speedReadings, speed];
-            const avgSpeed = newReadings.reduce((a, b) => a + b, 0) / newReadings.length;
+            
+            // Изчисляваме средната скорост базирана на изминато разстояние и време
+            // Това позволява спирането да намалява средната скорост автоматично
+            const timeInSectorSeconds = (now - state.sectorEntryTime) / 1000;
+            
+            // Средна скорост = изминато разстояние / изминало време
+            // Изминатото разстояние е distanceTraveled (в метри)
+            // Преобразуваме в км/ч: (метри / секунди) * 3.6
+            let avgSpeed = 0;
+            if (timeInSectorSeconds > 0 && state.distanceTraveled > 0) {
+              avgSpeed = (state.distanceTraveled / timeInSectorSeconds) * 3.6; // км/ч
+            }
             
             // Calculate predicted average based on current trend
             const recentReadings = newReadings.slice(-10); // Last 10 readings
@@ -464,16 +480,16 @@ export const useSectorStore = create(
                 const requiredSpeed = (targetAvg * totalDistanceKm - avgSpeed * distanceCoveredKm) / remainingDistanceKm;
                 
                 // Only recommend if it's realistic
-                const minRealisticSpeed = Math.max(10, state.currentSector.speedLimit - 30);
+                const minRealisticSpeed = Math.max(0, state.currentSector.speedLimit - 30);
                 if (requiredSpeed >= minRealisticSpeed && requiredSpeed <= state.currentSector.speedLimit) {
                   recommendedSpeed = Math.round(requiredSpeed);
                 } else if (requiredSpeed < minRealisticSpeed) {
-                  // If required speed is too low, it's impossible to recover
-                  recommendedSpeed = null; // Will show "Няма как да паднете под лимита"
+                  // If required speed is too low, recommend stopping
+                  recommendedSpeed = -1; // Special value to indicate "stop and wait"
                 }
               } else {
-                // Too close to the end, can't recover
-                recommendedSpeed = null;
+                // Too close to the end, recommend stopping if still exceeding
+                recommendedSpeed = -1;
               }
             }
             // If avgSpeed <= speedLimit, don't show any recommendation (we're already good)
@@ -483,7 +499,8 @@ export const useSectorStore = create(
               currentSectorAverageSpeed: avgSpeed,
               predictedAverageSpeed: predicted,
               willExceedLimit: predicted > state.currentSector.speedLimit,
-              recommendedSpeed
+              recommendedSpeed,
+              lastSpeedUpdateTime: now
             });
           }
         } catch (error) {
@@ -765,6 +782,7 @@ export const useSectorStore = create(
                   lastNotificationThreshold: 0,
                   sectorConfirmationCount: 0,
                   exitConfirmationCount: 0,
+                  lastSpeedUpdateTime: Date.now()
                 });
                 
                 console.log('✅ Current sector set to:', sector.name);
@@ -801,6 +819,7 @@ export const useSectorStore = create(
                 recommendedSpeed: null,
                 sectorConfirmationCount: 0,
                 exitConfirmationCount: 0,
+                lastSpeedUpdateTime: null
               });
             }
           }
