@@ -402,7 +402,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             route: sector.routeCoordinates ? sector.routeCoordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })) : []
           };
           
-          const isNear = isPointNearSector(location.coords, sectorCheck, 80);
+          const isNear = isPointNearSector(location.coords, sectorCheck, 50);
           if (isNear) {
             console.log(`✅ Found sector nearby: ${sector.name} (ID: ${sector.id})`);
           }

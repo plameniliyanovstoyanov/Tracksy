@@ -110,7 +110,7 @@ function distanceToLineSegment(point: Location, lineStart: [number, number], lin
 }
 
 // Проверка дали точка е близо до линия от сектор
-function isPointNearSector(point: Location, sector: SectorWithRoute, threshold: number = 80): boolean {
+function isPointNearSector(point: Location, sector: SectorWithRoute, threshold: number = 50): boolean {
   // Check if we have route coordinates
   if (sector.routeCoordinates && sector.routeCoordinates.length > 1) {
     // Проверяваме разстоянието до всеки сегмент от маршрута
@@ -248,14 +248,14 @@ export const useSectorStore = create(
         
         // Дебаунсинг - не проверяваме твърде често
         const now = Date.now();
-        if (now - lastSectorCheckTime < 500) { // Минимум 0.5 секунди между проверките
+        if (now - lastSectorCheckTime < 1000) { // 1 секунда между проверките
           return;
         }
         
         try {
           // Проверяваме дали сме в някой сектор
           const newSector = sectors.find(sector => 
-            sector.active && isPointNearSector(location, sector, 80) // По-малък threshold за по-бърза детекция
+            sector.active && isPointNearSector(location, sector, 50) // Строг threshold - само когато сме РЕАЛНО в сектора
           );
 
           // Ако вече сме в сектор, не правим нищо
@@ -270,7 +270,7 @@ export const useSectorStore = create(
             // Изискваме 3 последователни потвърждения преди да влезем
             const newCount = sectorConfirmationCount + 1;
             
-            if (newCount >= 2) {
+            if (newCount >= 3) {
               // Calculate total sector distance
               let totalDistance = 0;
               const sectorWithRoute = newSector as SectorWithRoute;
@@ -314,8 +314,10 @@ export const useSectorStore = create(
                 Notifications.scheduleNotificationAsync({
                   content: {
                     title: `Влязохте в сектор: ${newSector.name}`,
-                    body: `Ограничение: ${newSector.speedLimit} км/ч`,
+                    body: `Ограничение: ${newSector.speedLimit} ��м/ч`,
                     data: { sectorId: newSector.id },
+                    sound: true,
+                    vibrate: [0, 250, 250, 250],
                   },
                   trigger: null,
                 }).catch(error => {
@@ -396,6 +398,8 @@ export const useSectorStore = create(
                   title: `Излязохте от сектор: ${currentSector.name}`,
                   body: `Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч`,
                   data: { sectorId: currentSector.id },
+                  sound: true,
+                  vibrate: [0, 250, 250, 250],
                 },
                 trigger: null,
               }).catch(error => {
@@ -452,21 +456,24 @@ export const useSectorStore = create(
               const remainingDistanceKm = remainingDistance / 1000;
               const totalDistanceKm = state.sectorTotalDistance / 1000;
               
-              if (remainingDistanceKm > 0.05) { // At least 50m remaining
-                // Target average at the limit (not below)
+              if (remainingDistanceKm > 0.1) { // At least 100m remaining
+                // Target average at the limit
                 const targetAvg = state.currentSector.speedLimit;
                 
                 // Calculate required speed: (Target * Total - Current * Covered) / Remaining
                 const requiredSpeed = (targetAvg * totalDistanceKm - avgSpeed * distanceCoveredKm) / remainingDistanceKm;
                 
-                // Only recommend if it's realistic (not too low and not negative)
-                const minRealisticSpeed = Math.max(0, state.currentSector.speedLimit - 20);
-                if (requiredSpeed >= minRealisticSpeed && requiredSpeed < state.currentSector.speedLimit) {
+                // Only recommend if it's realistic
+                const minRealisticSpeed = Math.max(10, state.currentSector.speedLimit - 30);
+                if (requiredSpeed >= minRealisticSpeed && requiredSpeed <= state.currentSector.speedLimit) {
                   recommendedSpeed = Math.round(requiredSpeed);
                 } else if (requiredSpeed < minRealisticSpeed) {
                   // If required speed is too low, it's impossible to recover
                   recommendedSpeed = null; // Will show "Няма как да паднете под лимита"
                 }
+              } else {
+                // Too close to the end, can't recover
+                recommendedSpeed = null;
               }
             }
             // If avgSpeed <= speedLimit, don't show any recommendation (we're already good)
@@ -537,48 +544,46 @@ export const useSectorStore = create(
           
           const progress = Math.min(1, distanceFromStart / sectorTotalDistance);
           
-          // Check if we've crossed a notification threshold
-          const thresholds = [0.33, 0.66];
-          for (const threshold of thresholds) {
-            if (progress >= threshold && lastNotificationThreshold < threshold) {
-              // Send notification
-              const { currentSectorAverageSpeed, recommendedSpeed } = state;
-              const isExceeding = currentSectorAverageSpeed > currentSector.speedLimit;
+          // Check if we've crossed the 50% notification threshold
+          const threshold = 0.5;
+          if (progress >= threshold && lastNotificationThreshold < threshold) {
+            // Send notification
+            const { currentSectorAverageSpeed, recommendedSpeed } = state;
+            const isExceeding = currentSectorAverageSpeed > currentSector.speedLimit;
+            
+            if (Platform.OS !== 'web') {
+              let notificationBody = '';
               
-              if (Platform.OS !== 'web') {
-                const progressPercent = Math.round(threshold * 100);
-                let notificationBody = '';
-                
-                if (isExceeding) {
-                  notificationBody = `⚠️ Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n` +
-                    `Превишавате с ${(currentSectorAverageSpeed - currentSector.speedLimit).toFixed(1)} км/ч!\n` +
-                    `Препоръчителна скорост: ${recommendedSpeed ? `≤${recommendedSpeed.toFixed(0)} км/ч` : 'Намалете!'}`;
-                } else {
-                  notificationBody = `✅ Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n` +
-                    `Всичко е наред - под лимита сте`;
-                }
-                
-                Notifications.scheduleNotificationAsync({
-                  content: {
-                    title: `${progressPercent}% от сектор ${currentSector.name}`,
-                    body: notificationBody,
-                    data: { 
-                      sectorId: currentSector.id,
-                      progress: threshold,
-                      isExceeding,
-                      averageSpeed: currentSectorAverageSpeed,
-                      recommendedSpeed
-                    },
-                    ...(isExceeding ? { sound: 'default' } : {}),
-                  },
-                  trigger: null,
-                }).catch(error => {
-                  console.error('Failed to send progress notification:', error);
-                });
+              if (isExceeding) {
+                notificationBody = `⚠️ Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n` +
+                  `Превишавате с ${(currentSectorAverageSpeed - currentSector.speedLimit).toFixed(1)} км/ч!\n` +
+                  `Препоръчителна скорост: ${recommendedSpeed ? `≤${recommendedSpeed.toFixed(0)} км/ч` : 'Намалете!'}`;
+              } else {
+                notificationBody = `✅ Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n` +
+                  `Всичко е наред - под лимита сте`;
               }
               
-              set({ lastNotificationThreshold: threshold });
+              Notifications.scheduleNotificationAsync({
+                content: {
+                  title: `На половината от сектор ${currentSector.name}`,
+                  body: notificationBody,
+                  data: { 
+                    sectorId: currentSector.id,
+                    progress: threshold,
+                    isExceeding,
+                    averageSpeed: currentSectorAverageSpeed,
+                    recommendedSpeed
+                  },
+                  sound: true,
+                  vibrate: [0, 250, 250, 250],
+                },
+                trigger: null,
+              }).catch(error => {
+                console.error('Failed to send progress notification:', error);
+              });
             }
+            
+            set({ lastNotificationThreshold: threshold });
           }
           
           set({ 

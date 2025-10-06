@@ -205,17 +205,7 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
           </Text>
         </View>
 
-        {/* Warning section */}
-        {(willExceedLimit || currentSectorAverageSpeed > sector.speedLimit) && (
-          <View style={[styles.warning, !willExceedLimit && styles.caution]}>
-            <AlertTriangle color={willExceedLimit ? "#ff4444" : "#ffaa00"} size={16} />
-            <Text style={[styles.warningText, !willExceedLimit && styles.cautionText]}>
-              {willExceedLimit 
-                ? "Ще превишите лимита!" 
-                : "Превишавате лимита!"}
-            </Text>
-          </View>
-        )}
+
       </LinearGradient>
     </Animated.View>
   );

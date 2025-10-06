@@ -19,23 +19,21 @@ export const [DeviceProvider, useDevice] = createContextHook(() => {
 
       // Generate new device ID
       const timestamp = Date.now();
-      const random = Math.random().toString(36).substr(2, 9);
+      const random = Math.random().toString(36).substring(2, 11);
       const platform = Platform.OS;
       
       const uniqueId = `${platform}_${timestamp}_${random}`;
       
       // Store the generated ID
-      try {
-        await AsyncStorage.setItem('device_id', uniqueId);
-      } catch (e) {
-        console.warn('Could not store device ID:', e);
-      }
+      await AsyncStorage.setItem('device_id', uniqueId);
       
       return uniqueId;
     } catch (error) {
       console.error('Error generating device ID:', error);
       // Fallback to timestamp + random
-      return `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 11);
+      return `device_${timestamp}_${random}`;
     }
   }, []);
 
