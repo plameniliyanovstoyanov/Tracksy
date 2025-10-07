@@ -448,9 +448,7 @@ export const useSectorStore = create(
             const timeInSectorSeconds = (now - state.sectorEntryTime) / 1000;
             
             let avgSpeed = 0;
-            if (timeInSectorSeconds > 2 && state.distanceTraveled > 10) {
-              avgSpeed = (state.distanceTraveled / timeInSectorSeconds) * 3.6;
-            } else if (newReadings.length > 0) {
+            if (newReadings.length > 0) {
               avgSpeed = newReadings.reduce((a, b) => a + b, 0) / newReadings.length;
             }
             

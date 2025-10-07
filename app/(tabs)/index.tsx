@@ -46,7 +46,7 @@ export default function HomeScreen() {
     setLocation(location);
     let speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
     
-    if (speed < 1) {
+    if (speed < 3) {
       speed = 0;
     }
     

@@ -416,7 +416,7 @@ export const sectors: Sector[] = [
     id: '19',
     name: 'Тестови сектор 3',
     route: 'Тест',
-    speedLimit: 50,
+    speedLimit: 65,
     distance: 2.5,
     description: 'Тестови сектор 3 - посока 1',
     startPoint: {
@@ -435,7 +435,7 @@ export const sectors: Sector[] = [
     id: '20',
     name: 'Тестови сектор 4',
     route: 'Тест',
-    speedLimit: 50,
+    speedLimit: 65,
     distance: 2.5,
     description: 'Тестови сектор 4 - посока 2',
     startPoint: {
