@@ -39,11 +39,9 @@ export const useSpeedStore = create(
         const newMaxSpeed = Math.max(state.maxSpeed, speed);
         const newAverageSpeed = newSpeedHistory.reduce((sum, s) => sum + s, 0) / newSpeedHistory.length;
 
-        const lastNonZero = speed > 0 ? speed : state.lastNonZeroSpeed;
-
         set({
           currentSpeed: speed,
-          lastNonZeroSpeed: lastNonZero,
+          lastNonZeroSpeed: speed > 0 ? speed : state.lastNonZeroSpeed,
           averageSpeed: newAverageSpeed,
           maxSpeed: newMaxSpeed,
           speedHistory: newSpeedHistory,

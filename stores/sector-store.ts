@@ -445,59 +445,41 @@ export const useSectorStore = create(
             const now = Date.now();
             const newReadings = [...state.speedReadings, speed];
             
-            // Изчисляваме средната скорост базирана на изминато разстояние и време
-            // Това позволява спирането да намалява средната скорост автоматично
             const timeInSectorSeconds = (now - state.sectorEntryTime) / 1000;
             
-            // Средна скорост = изминато разстояние / изминало време
-            // Изминатото разстояние е distanceTraveled (в метри)
-            // Преобразуваме в км/ч: (метри / секунди) * 3.6
             let avgSpeed = 0;
             if (timeInSectorSeconds > 2 && state.distanceTraveled > 10) {
-              // Когато сме спрели (speed = 0), средната скорост автоматично намалява
-              // защото времето расте, а разстоянието остава същото
-              avgSpeed = (state.distanceTraveled / timeInSectorSeconds) * 3.6; // км/ч
+              avgSpeed = (state.distanceTraveled / timeInSectorSeconds) * 3.6;
             } else if (newReadings.length > 0) {
-              // Fallback за първите секунди - използваме средна от readings
               avgSpeed = newReadings.reduce((a, b) => a + b, 0) / newReadings.length;
             }
             
-            // Calculate predicted average based on current trend
-            const recentReadings = newReadings.slice(-10); // Last 10 readings
+            const recentReadings = newReadings.slice(-10);
             const recentAvg = recentReadings.reduce((a, b) => a + b, 0) / recentReadings.length;
-            const predicted = avgSpeed * 0.7 + recentAvg * 0.3; // Weighted prediction
+            const predicted = avgSpeed * 0.7 + recentAvg * 0.3;
             
-            // Calculate recommended speed
             let recommendedSpeed: number | null = null;
             
-            // Only calculate if we're exceeding the limit
             if (avgSpeed > state.currentSector.speedLimit) {
               const remainingDistance = Math.max(0, state.sectorTotalDistance - state.distanceTraveled);
               const distanceCoveredKm = state.distanceTraveled / 1000;
               const remainingDistanceKm = remainingDistance / 1000;
               const totalDistanceKm = state.sectorTotalDistance / 1000;
               
-              if (remainingDistanceKm > 0.1) { // At least 100m remaining
-                // Target average at the limit
+              if (remainingDistanceKm > 0.1) {
                 const targetAvg = state.currentSector.speedLimit;
-                
-                // Calculate required speed: (Target * Total - Current * Covered) / Remaining
                 const requiredSpeed = (targetAvg * totalDistanceKm - avgSpeed * distanceCoveredKm) / remainingDistanceKm;
                 
-                // Only recommend if it's realistic
                 const minRealisticSpeed = Math.max(0, state.currentSector.speedLimit - 30);
                 if (requiredSpeed >= minRealisticSpeed && requiredSpeed <= state.currentSector.speedLimit) {
                   recommendedSpeed = Math.round(requiredSpeed);
                 } else if (requiredSpeed < minRealisticSpeed) {
-                  // If required speed is too low, recommend stopping
-                  recommendedSpeed = -1; // Special value to indicate "stop and wait"
+                  recommendedSpeed = -1;
                 }
               } else {
-                // Too close to the end, recommend stopping if still exceeding
                 recommendedSpeed = -1;
               }
             }
-            // If avgSpeed <= speedLimit, don't show any recommendation (we're already good)
             
             set({ 
               speedReadings: newReadings,

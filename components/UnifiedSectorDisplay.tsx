@@ -11,7 +11,7 @@ interface UnifiedSectorDisplayProps {
 }
 
 export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sector }) => {
-  const { currentSpeed } = useSpeedStore();
+  const { currentSpeed, lastNonZeroSpeed } = useSpeedStore();
   const { 
     sectorEntryTime,
     currentSectorAverageSpeed,
@@ -55,7 +55,7 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const remainingDistance = sectorTotalDistance * (1 - sectorProgress);
+  const remainingDistance = Math.max(0, sectorTotalDistance - (sectorTotalDistance * sectorProgress));
   const progressPercentage = Math.round(sectorProgress * 100);
   
   // Individual color logic for each speed metric
@@ -116,7 +116,7 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
         <View style={styles.mainSpeedContainer}>
           <View style={styles.currentSpeedDisplay}>
             <Text style={[styles.currentSpeedValue, { color: getCurrentSpeedColor() }]}>
-              {currentSpeed.toFixed(0)}
+              {Math.round(currentSpeed)}
             </Text>
             <Text style={styles.speedUnit}>км/ч</Text>
           </View>
@@ -153,7 +153,7 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>Оставащи км</Text>
             <Text style={styles.statValue}>
-              {remainingDistance.toFixed(1)}
+              {(remainingDistance / 1000).toFixed(1)}
             </Text>
           </View>
         </View>
