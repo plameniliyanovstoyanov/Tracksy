@@ -453,8 +453,11 @@ export const useSectorStore = create(
             // Изминатото разстояние е distanceTraveled (в метри)
             // Преобразуваме в км/ч: (метри / секунди) * 3.6
             let avgSpeed = 0;
-            if (timeInSectorSeconds > 0 && state.distanceTraveled > 0) {
+            if (timeInSectorSeconds > 2 && state.distanceTraveled > 10) {
               avgSpeed = (state.distanceTraveled / timeInSectorSeconds) * 3.6; // км/ч
+            } else if (newReadings.length > 0) {
+              // Fallback за първите секунди - използваме средна от readings
+              avgSpeed = newReadings.reduce((a, b) => a + b, 0) / newReadings.length;
             }
             
             // Calculate predicted average based on current trend
