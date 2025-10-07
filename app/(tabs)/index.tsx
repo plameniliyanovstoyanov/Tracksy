@@ -44,7 +44,12 @@ export default function HomeScreen() {
 
   const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
     setLocation(location);
-    const speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
+    let speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
+    
+    if (speed < 1) {
+      speed = 0;
+    }
+    
     updateSpeed(speed);
     
     checkSectorEntry(location.coords);

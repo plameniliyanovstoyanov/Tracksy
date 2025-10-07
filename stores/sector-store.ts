@@ -454,6 +454,8 @@ export const useSectorStore = create(
             // Преобразуваме в км/ч: (метри / секунди) * 3.6
             let avgSpeed = 0;
             if (timeInSectorSeconds > 2 && state.distanceTraveled > 10) {
+              // Когато сме спрели (speed = 0), средната скорост автоматично намалява
+              // защото времето расте, а разстоянието остава същото
               avgSpeed = (state.distanceTraveled / timeInSectorSeconds) * 3.6; // км/ч
             } else if (newReadings.length > 0) {
               // Fallback за първите секунди - използваме средна от readings

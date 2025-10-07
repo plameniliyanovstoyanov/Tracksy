@@ -261,7 +261,12 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     
     if (location) {
       try {
-        const speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
+        let speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
+        
+        if (speed < 1) {
+          speed = 0;
+        }
+        
         const locationData: LocationData = {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
