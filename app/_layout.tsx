@@ -19,28 +19,28 @@ const queryClient = new QueryClient();
 
 
 function RootLayoutNav() {
-  const { isAuthenticated, loading } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
+  // const { isAuthenticated, loading } = useAuth();
+  // const segments = useSegments();
+  // const router = useRouter();
 
-  useEffect(() => {
-    if (loading) return;
+  // useEffect(() => {
+  //   if (loading) return;
 
-    const inAuthGroup = segments[0] === 'login';
+  //   const inAuthGroup = segments[0] === 'login';
 
-    if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to login if not authenticated
-      router.replace('/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to tabs if authenticated and on login page
-      router.replace('/(tabs)');
-    }
-  }, [isAuthenticated, segments, loading, router]);
+  //   if (!isAuthenticated && !inAuthGroup) {
+  //     // Redirect to login if not authenticated
+  //     router.replace('/login');
+  //   } else if (isAuthenticated && inAuthGroup) {
+  //     // Redirect to tabs if authenticated and on login page
+  //     router.replace('/(tabs)');
+  //   }
+  // }, [isAuthenticated, segments, loading, router]);
 
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
+      {/* <Stack.Screen name="login" options={{ headerShown: false }} /> */}
       <Stack.Screen name="modal" options={{ presentation: "modal" }} />
     </Stack>
   );
