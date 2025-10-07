@@ -55,7 +55,7 @@ export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sect
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const remainingDistance = Math.max(0, sectorTotalDistance - (sectorTotalDistance * sectorProgress));
+  const remainingDistance = Math.max(0, sectorTotalDistance * (1 - sectorProgress));
   const progressPercentage = Math.round(sectorProgress * 100);
   
   // Individual color logic for each speed metric
