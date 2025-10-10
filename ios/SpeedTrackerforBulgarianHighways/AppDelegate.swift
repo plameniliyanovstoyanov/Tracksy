@@ -2,7 +2,9 @@ import Expo
 import React
 import ReactAppDependencyProvider
 import UIKit
+#if canImport(ActivityKit)
 import ActivityKit
+#endif
 
 @UIApplicationMain
 public class AppDelegate: ExpoAppDelegate {
@@ -33,13 +35,15 @@ public class AppDelegate: ExpoAppDelegate {
 
 #if DEBUG
     // Quick DEBUG-only smoke test for Live Activity
-    startLiveActivity()
-    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-      updateLiveActivity(speed: 70, average: 63.9)
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
-      endLiveActivity()
-    }
+    #if canImport(ActivityKit)
+    // startLiveActivity()
+    // DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+    //   updateLiveActivity(speed: 70, average: 63.9)
+    // }
+    // DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
+    //   endLiveActivity()
+    // }
+    #endif
 #endif
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -83,34 +87,29 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 }
 
 // MARK: - Live Activity helpers (App target)
-
-var tracksyActivity: Activity<TracksyAttributes>? = nil
-
-func startLiveActivity() {
-  let attributes = TracksyAttributes(name: "Tracksy")
-  let contentState = TracksyAttributes.ContentState(speed: 58, average: 48.2)
-
-  do {
-    let activity = try Activity<TracksyAttributes>.request(
-      attributes: attributes,
-      contentState: contentState,
-      pushType: nil
-    )
-    tracksyActivity = activity
-    print("Started Live Activity with id: \(activity.id)")
-  } catch {
-    print("Error starting Live Activity: \(error)")
-  }
-}
-
-func updateLiveActivity(speed: Int, average: Double) {
-  Task {
-    await tracksyActivity?.update(using: TracksyAttributes.ContentState(speed: speed, average: average))
-  }
-}
-
-func endLiveActivity() {
-  Task {
-    await tracksyActivity?.end(dismissalPolicy: .immediate)
-  }
-}
+// var tracksyActivity: Activity<TracksyAttributes>? = nil
+// func startLiveActivity() {
+//   let attributes = TracksyAttributes(name: "Tracksy")
+//   let contentState = TracksyAttributes.ContentState(speed: 58, average: 48.2)
+//   do {
+//     let activity = try Activity<TracksyAttributes>.request(
+//       attributes: attributes,
+//       contentState: contentState,
+//       pushType: nil
+//     )
+//     tracksyActivity = activity
+//     print("Started Live Activity with id: \(activity.id)")
+//   } catch {
+//     print("Error starting Live Activity: \(error)")
+//   }
+// }
+// func updateLiveActivity(speed: Int, average: Double) {
+//   Task {
+//     await tracksyActivity?.update(using: TracksyAttributes.ContentState(speed: speed, average: average))
+//   }
+// }
+// func endLiveActivity() {
+//   Task {
+//     await tracksyActivity?.end(dismissalPolicy: .immediate)
+//   }
+// }
