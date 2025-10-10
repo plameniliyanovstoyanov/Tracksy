@@ -3,20 +3,20 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		54C567B9C942E84347652907 /* libPods-Tracksy.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5A9A747CA2C10C8E9EFB4A4B /* libPods-Tracksy.a */; };
+		613849D8BE94DA94236274C1 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86AC1A4343EE322FD8D8357B /* ExpoModulesProvider.swift */; };
 		61F08478B08FE3DA97277CDA /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1B48CAAE13411136858FBB00 /* PrivacyInfo.xcprivacy */; };
 		6F599E682E8F096000BE1E94 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6F599E672E8F096000BE1E94 /* WidgetKit.framework */; };
 		6F599E6A2E8F096000BE1E94 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6F599E692E8F096000BE1E94 /* SwiftUI.framework */; };
 		6F599E7B2E8F096300BE1E94 /* Live ActivityExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6F599E662E8F096000BE1E94 /* Live ActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		ACE739437D3C7FF9BD52B4E6 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4EDB26BA8A107D2C9EC9BB5 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		F9EF1A6E44B6F0969E972B07 /* libPods-SpeedTrackerforBulgarianHighways.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 61210AB9D2327C75990CEA14 /* libPods-SpeedTrackerforBulgarianHighways.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,25 +49,23 @@
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = SpeedTrackerforBulgarianHighways/Info.plist; sourceTree = "<group>"; };
 		1B48CAAE13411136858FBB00 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = SpeedTrackerforBulgarianHighways/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		54D6B2F379C272115ED8D8AD /* Pods-SpeedTrackerforBulgarianHighways.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SpeedTrackerforBulgarianHighways.release.xcconfig"; path = "Target Support Files/Pods-SpeedTrackerforBulgarianHighways/Pods-SpeedTrackerforBulgarianHighways.release.xcconfig"; sourceTree = "<group>"; };
-		61210AB9D2327C75990CEA14 /* libPods-SpeedTrackerforBulgarianHighways.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-SpeedTrackerforBulgarianHighways.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5A9A747CA2C10C8E9EFB4A4B /* libPods-Tracksy.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Tracksy.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6F599E662E8F096000BE1E94 /* Live ActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Live ActivityExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6F599E672E8F096000BE1E94 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		6F599E692E8F096000BE1E94 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		86AC1A4343EE322FD8D8357B /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Tracksy/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = SpeedTrackerforBulgarianHighways/SplashScreen.storyboard; sourceTree = "<group>"; };
+		B0AC4661291CE6A1A4F37CDF /* Pods-Tracksy.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Tracksy.debug.xcconfig"; path = "Target Support Files/Pods-Tracksy/Pods-Tracksy.debug.xcconfig"; sourceTree = "<group>"; };
+		B4BA302F1E3C3A12B7116846 /* Pods-Tracksy.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Tracksy.release.xcconfig"; path = "Target Support Files/Pods-Tracksy/Pods-Tracksy.release.xcconfig"; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		C4EDB26BA8A107D2C9EC9BB5 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-SpeedTrackerforBulgarianHighways/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		DA3435CEB1B777AFD38AD911 /* Pods-SpeedTrackerforBulgarianHighways.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SpeedTrackerforBulgarianHighways.debug.xcconfig"; path = "Target Support Files/Pods-SpeedTrackerforBulgarianHighways/Pods-SpeedTrackerforBulgarianHighways.debug.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = SpeedTrackerforBulgarianHighways/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* SpeedTrackerforBulgarianHighways-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "SpeedTrackerforBulgarianHighways-Bridging-Header.h"; path = "SpeedTrackerforBulgarianHighways/SpeedTrackerforBulgarianHighways-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-<<<<<<< Updated upstream
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		6F599E6B2E8F096000BE1E94 /* Live Activity */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Live Activity"; sourceTree = "<group>"; };
-=======
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		6F599E7C2E8F096300BE1E94 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		6F599E7C2E8F096300BE1E94 /* Exceptions for "Live Activity" folder in "Live ActivityExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -77,8 +75,18 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		6F599E6B2E8F096000BE1E94 /* Live Activity */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (6F599E7C2E8F096300BE1E94 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Live Activity"; sourceTree = "<group>"; };
->>>>>>> Stashed changes
+		6F599E6B2E8F096000BE1E94 /* Live Activity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6F599E7C2E8F096300BE1E94 /* Exceptions for "Live Activity" folder in "Live ActivityExtension" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "Live Activity";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,7 +94,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F9EF1A6E44B6F0969E972B07 /* libPods-SpeedTrackerforBulgarianHighways.a in Frameworks */,
+				54C567B9C942E84347652907 /* libPods-Tracksy.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -120,9 +128,9 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				61210AB9D2327C75990CEA14 /* libPods-SpeedTrackerforBulgarianHighways.a */,
 				6F599E672E8F096000BE1E94 /* WidgetKit.framework */,
 				6F599E692E8F096000BE1E94 /* SwiftUI.framework */,
+				5A9A747CA2C10C8E9EFB4A4B /* libPods-Tracksy.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -130,7 +138,7 @@
 		491A5B67BA0DF7DC1C9B9E94 /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				57E08FC4432BAEA90754E8C2 /* SpeedTrackerforBulgarianHighways */,
+				69B6AF6E712B5E9113C70D04 /* Tracksy */,
 			);
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
@@ -140,16 +148,18 @@
 			children = (
 				DA3435CEB1B777AFD38AD911 /* Pods-SpeedTrackerforBulgarianHighways.debug.xcconfig */,
 				54D6B2F379C272115ED8D8AD /* Pods-SpeedTrackerforBulgarianHighways.release.xcconfig */,
+				B0AC4661291CE6A1A4F37CDF /* Pods-Tracksy.debug.xcconfig */,
+				B4BA302F1E3C3A12B7116846 /* Pods-Tracksy.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
 		};
-		57E08FC4432BAEA90754E8C2 /* SpeedTrackerforBulgarianHighways */ = {
+		69B6AF6E712B5E9113C70D04 /* Tracksy */ = {
 			isa = PBXGroup;
 			children = (
-				C4EDB26BA8A107D2C9EC9BB5 /* ExpoModulesProvider.swift */,
+				86AC1A4343EE322FD8D8357B /* ExpoModulesProvider.swift */,
 			);
-			name = SpeedTrackerforBulgarianHighways;
+			name = Tracksy;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -236,8 +246,6 @@
 				6F599E6B2E8F096000BE1E94 /* Live Activity */,
 			);
 			name = "Live ActivityExtension";
-			packageProductDependencies = (
-			);
 			productName = "Live ActivityExtension";
 			productReference = 6F599E662E8F096000BE1E94 /* Live ActivityExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -330,7 +338,7 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-SpeedTrackerforBulgarianHighways-checkManifestLockResult.txt",
+				"$(DERIVED_FILE_DIR)/Pods-Tracksy-checkManifestLockResult.txt",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -354,7 +362,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-SpeedTrackerforBulgarianHighways/expo-configure-project.sh\"\n";
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Tracksy/expo-configure-project.sh\"\n";
 		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -362,7 +370,7 @@
 			files = (
 			);
 			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-SpeedTrackerforBulgarianHighways/Pods-SpeedTrackerforBulgarianHighways-resources.sh",
+				"${PODS_ROOT}/Target Support Files/Pods-Tracksy/Pods-Tracksy-resources.sh",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXApplication/ExpoApplication_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
@@ -403,7 +411,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-SpeedTrackerforBulgarianHighways/Pods-SpeedTrackerforBulgarianHighways-resources.sh\"\n";
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Tracksy/Pods-Tracksy-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		C8275DC1A0B4619B7D7C151F /* [CP] Embed Pods Frameworks */ = {
@@ -412,7 +420,7 @@
 			files = (
 			);
 			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-SpeedTrackerforBulgarianHighways/Pods-SpeedTrackerforBulgarianHighways-frameworks.sh",
+				"${PODS_ROOT}/Target Support Files/Pods-Tracksy/Pods-Tracksy-frameworks.sh",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
 			);
 			name = "[CP] Embed Pods Frameworks";
@@ -421,7 +429,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-SpeedTrackerforBulgarianHighways/Pods-SpeedTrackerforBulgarianHighways-frameworks.sh\"\n";
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Tracksy/Pods-Tracksy-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -432,7 +440,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				ACE739437D3C7FF9BD52B4E6 /* ExpoModulesProvider.swift in Sources */,
+				613849D8BE94DA94236274C1 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -456,7 +464,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = DA3435CEB1B777AFD38AD911 /* Pods-SpeedTrackerforBulgarianHighways.debug.xcconfig */;
+			baseConfigurationReference = B0AC4661291CE6A1A4F37CDF /* Pods-Tracksy.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -493,7 +501,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 54D6B2F379C272115ED8D8AD /* Pods-SpeedTrackerforBulgarianHighways.release.xcconfig */;
+			baseConfigurationReference = B4BA302F1E3C3A12B7116846 /* Pods-Tracksy.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -555,6 +563,7 @@
 				MARKETING_VERSION = 1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = "bg.tracksy.app.Live-Activity";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -602,6 +611,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MARKETING_VERSION = 1.0;
 				MTL_FAST_MATH = YES;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = "bg.tracksy.app.Live-Activity";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -670,7 +680,10 @@
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_LDFLAGS = "$(inherited)  ";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
@@ -725,7 +738,10 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = NO;
-				OTHER_LDFLAGS = "$(inherited)  ";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				USE_HERMES = true;
