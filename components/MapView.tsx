@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Navigation, MapPin } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { sectors } from '@/data/sectors';
@@ -530,16 +530,17 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
       
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Зареждане на маршрути...</Text>
-          <Text style={styles.loadingSubtext}>Получаване на реални пътни данни от Mapbox</Text>
-          <Text style={styles.loadingNote}>Секторите ще се покажат само ако има валидни маршрутни данни</Text>
+          <ActivityIndicator size="large" color="#00ff88" />
+          <Text style={styles.loadingText}>Зареждане на картата...</Text>
+          <Text style={styles.loadingSubtext}>Подготвяме секторите за вас</Text>
+          <Text style={styles.loadingNote}>Моля, изчакайте...</Text>
         </View>
       ) : (
         <WebView
           ref={webViewRef}
           style={styles.map}
           source={{ html: mapHTML }}
-          scrollEnabled={false}
+          scrollEnabled={true}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           startInLoadingState={true}

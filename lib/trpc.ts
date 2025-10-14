@@ -10,9 +10,8 @@ const getBaseUrl = () => {
     return process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
   }
 
-  throw new Error(
-    "No base url found, please set EXPO_PUBLIC_RORK_API_BASE_URL"
-  );
+  // Return empty string instead of throwing error (no backend needed for now)
+  return "";
 };
 
 export const trpcClient = trpc.createClient({
