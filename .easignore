@@ -1,0 +1,32 @@
+# Build artifacts
+.expo/
+dist/
+web-build/
+.vercel/
+
+# Development
+.DS_Store
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Node modules (will be reinstalled)
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Large binary files that aren't needed
+ios/Pods/boost/
+ios/Pods/hermes-engine-artifacts/*.tar.gz
+
+# Documentation
+README.md
+*.md
+

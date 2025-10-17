@@ -1,0 +1,44 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      }
+    },
+    "production": {
+      "ios": {
+        "resourceClass": "m-medium",
+        "buildConfiguration": "Release",
+        "cache": {
+          "cacheDefaultPaths": true,
+          "customPaths": [
+            "ios/Pods"
+          ]
+        }
+      },
+      "android": {
+        "buildType": "apk",
+        "cache": {
+          "cacheDefaultPaths": true
+        }
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
+
