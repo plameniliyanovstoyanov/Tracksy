@@ -4,46 +4,35 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "ios": {
-        "resourceClass": "m-medium"
-      }
-    },
-    "preview": {
-      "distribution": "internal",
-      "ios": {
-        "simulator": false,
-        "resourceClass": "m-medium"
-      }
-    },
     "production": {
       "env": {
-        "SKIP_BUNDLING": "0"
+        "SKIP_BUNDLING": "0",
+        "GYM_WORKSPACE": "SpeedTrackerForBulgarianHighways.xcworkspace",
+        "GYM_SCHEME": "Tracksy",
+        "FLIPPER": "0",
+        "USE_FRAMEWORKS": "static",
+        "RCT_NO_LAUNCH_PACKAGER": "1"
       },
       "ios": {
-        "resourceClass": "m-large",
+        "resourceClass": "m-medium",
         "buildConfiguration": "Release",
-        "cache": {
-          "cacheDefaultPaths": true,
-          "customPaths": [
-            "ios/Pods",
-            "ios/build"
-          ]
-        },
-        "simulator": false
+        "simulator": false,
+        "image": "latest"
       },
       "android": {
         "buildType": "apk",
-        "cache": {
-          "cacheDefaultPaths": true
-        }
+        "cache": { "cacheDefaultPaths": true }
       }
+    },
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": { "resourceClass": "m-medium" }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": { "simulator": false, "resourceClass": "m-medium" }
     }
   },
-  "submit": {
-    "production": {}
-  }
+  "submit": { "production": {} }
 }
-

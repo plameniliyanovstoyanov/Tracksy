@@ -8,7 +8,8 @@
     "start-web-dev": "DEBUG=expo* bunx rork start -p mpknkbq4nzk7zexvyndnn --web --tunnel",
     "lint": "expo lint",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "eas-build-pre-install": "find ios -maxdepth 1 -name '*.xcworkspace' ! -name 'SpeedTrackerForBulgarianHighways.xcworkspace' -exec rm -rf {} +"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
