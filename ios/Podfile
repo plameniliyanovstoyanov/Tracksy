@@ -11,6 +11,9 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 install! 'cocoapods',
   :deterministic_uuids => false
 
+# Enable parallel builds for faster compilation
+ENV['COCOAPODS_PARALLEL_CODE_SIGN'] = 'true'
+
 prepare_react_native_project!
 
 target 'Tracksy' do
@@ -49,6 +52,22 @@ target 'Tracksy' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => podfile_properties['apple.ccacheEnabled'] == 'true',
     )
+
+    # Enable parallel builds and optimize compilation
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        # Enable parallel builds
+        config.build_settings['SWIFT_COMPILATION_MODE'] = 'wholemodule'
+        config.build_settings['COMPILER_INDEX_STORE_ENABLE'] = 'NO'
+        
+        # Optimize Swift compilation
+        config.build_settings['SWIFT_OPTIMIZATION_LEVEL'] = '-Owholemodule'
+        
+        # Disable debug symbols for faster builds
+        config.build_settings['DEBUG_INFORMATION_FORMAT'] = 'dwarf'
+        config.build_settings['GCC_GENERATE_DEBUGGING_SYMBOLS'] = 'NO'
+      end
+    end
 
     # This is necessary for Xcode 14, because it signs resource bundles by default
     # when building for devices.

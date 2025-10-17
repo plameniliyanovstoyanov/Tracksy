@@ -19,15 +19,20 @@
       }
     },
     "production": {
+      "env": {
+        "SKIP_BUNDLING": "0"
+      },
       "ios": {
-        "resourceClass": "m-medium",
+        "resourceClass": "m-large",
         "buildConfiguration": "Release",
         "cache": {
           "cacheDefaultPaths": true,
           "customPaths": [
-            "ios/Pods"
+            "ios/Pods",
+            "ios/build"
           ]
-        }
+        },
+        "simulator": false
       },
       "android": {
         "buildType": "apk",
