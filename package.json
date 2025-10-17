@@ -9,7 +9,7 @@
     "lint": "expo lint",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "eas-build-pre-install": "find ios -maxdepth 1 -name '*.xcworkspace' ! -name 'SpeedTrackerForBulgarianHighways.xcworkspace' -exec rm -rf {} +"
+    "eas-build-pre-install": "find ios -maxdepth 1 -name '*.xcworkspace' ! -name 'SpeedTrackerforBulgarianHighways.xcworkspace' -exec rm -rf {} +"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
