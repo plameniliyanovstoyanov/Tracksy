@@ -42,6 +42,20 @@ target 'Tracksy' do
       :ccache_enabled => podfile_properties['apple.ccacheEnabled'] == 'true',
     )
 
+    # Махни CC/CXX override за extension-а (ако си включвал ccache другаде)
+    installer.aggregate_targets.each do |agg|
+      project = agg.user_project
+      project.targets.each do |t|
+        if t.name == 'Live ActivityExtension'
+          t.build_configurations.each do |cfg|
+            cfg.build_settings.delete('CC')
+            cfg.build_settings.delete('CXX')
+          end
+        end
+      end
+      project.save
+    end
+
     # Оптимизации
     installer.pods_project.targets.each do |t|
       t.build_configurations.each do |c|

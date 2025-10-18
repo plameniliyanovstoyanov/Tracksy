@@ -7,7 +7,7 @@
     "production": {
       "env": {
         "SKIP_BUNDLING": "0",
-        "GYM_WORKSPACE": "SpeedTrackerforBulgarianHighways.xcworkspace",
+        "GYM_WORKSPACE": "Tracksy.xcworkspace",
         "GYM_SCHEME": "Tracksy",
         "FLIPPER": "0",
         "USE_FRAMEWORKS": "static",
