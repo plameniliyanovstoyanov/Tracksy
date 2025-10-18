@@ -10,7 +10,6 @@ ENV['EX_DEV_CLIENT_NETWORK_INSPECTOR'] = podfile_properties['EX_DEV_CLIENT_NETWO
 platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 install! 'cocoapods', :deterministic_uuids => false
 
-ENV['COCOAPODS_PARALLEL_CODE_SIGN'] = 'true'
 prepare_react_native_project!
 
 target 'Tracksy' do
@@ -39,24 +38,10 @@ target 'Tracksy' do
       installer,
       config[:reactNativePath],
       :mac_catalyst_enabled => false,
-      :ccache_enabled => podfile_properties['apple.ccacheEnabled'] == 'true',
+      :ccache_enabled => false,
     )
 
-    # Махни CC/CXX override за extension-а (ако си включвал ccache другаде)
-    installer.aggregate_targets.each do |agg|
-      project = agg.user_project
-      project.targets.each do |t|
-        if t.name == 'Live ActivityExtension'
-          t.build_configurations.each do |cfg|
-            cfg.build_settings.delete('CC')
-            cfg.build_settings.delete('CXX')
-          end
-        end
-      end
-      project.save
-    end
-
-    # Оптимизации
+    # Оптимизации за по-бързо компилиране
     installer.pods_project.targets.each do |t|
       t.build_configurations.each do |c|
         c.build_settings['SWIFT_COMPILATION_MODE'] = 'wholemodule'
