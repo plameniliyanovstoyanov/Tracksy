@@ -51,10 +51,6 @@
 	<string>Allow $(PRODUCT_NAME) to use your location.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to use your location.</string>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
-	<true/>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
@@ -64,10 +60,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
-		<string>background-processing</string>
 		<string>remote-notification</string>
-		<string>processing</string>
-		<string>fetch</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>SplashScreen</string>

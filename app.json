@@ -21,8 +21,7 @@
         "NSLocationAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "UIBackgroundModes": [
-          "location",
-          "background-processing"
+          "location"
         ]
       },
       "entitlements": {
