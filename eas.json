@@ -11,7 +11,10 @@
         "GYM_SCHEME": "Tracksy",
         "FLIPPER": "0",
         "USE_FRAMEWORKS": "static",
-        "RCT_NO_LAUNCH_PACKAGER": "1"
+        "RCT_NO_LAUNCH_PACKAGER": "1",
+        "EXPO_PUBLIC_SUPABASE_URL": "$EXPO_PUBLIC_SUPABASE_URL",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$EXPO_PUBLIC_SUPABASE_ANON_KEY",
+        "EXPO_PUBLIC_MAPBOX_TOKEN": "$EXPO_PUBLIC_MAPBOX_TOKEN"
       },
       "ios": {
         "resourceClass": "m-medium",
