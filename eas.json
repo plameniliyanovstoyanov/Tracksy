@@ -5,7 +5,6 @@
   },
   "build": {
     "production": {
-      "autoIncrement": true,
       "env": {
         "SKIP_BUNDLING": "0",
         "GYM_WORKSPACE": "Tracksy.xcworkspace",
