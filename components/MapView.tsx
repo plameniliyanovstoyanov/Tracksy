@@ -4,7 +4,7 @@ import { Navigation, MapPin } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { sectors } from '@/data/sectors';
 import WebView from 'react-native-webview';
-import { fetchSectorRoute } from '@/utils/mapbox-directions';
+import { useSectorStore } from '@/stores/sector-store';
 
 interface MapViewComponentProps {
   location: Location.LocationObject | null;
@@ -14,84 +14,37 @@ const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoicGxhbWV
 
 export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) => {
   const webViewRef = useRef<WebView>(null);
-  const [sectorRoutes, setSectorRoutes] = useState<Record<string, [number, number][]>>({});
-  const [routesLoaded, setRoutesLoaded] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [hasInitiallyFocused, setHasInitiallyFocused] = useState(false);
   const [lastCenterTime, setLastCenterTime] = useState(0);
   const [previousLocation, setPreviousLocation] = useState<Location.LocationObject | null>(null);
   const [isFollowingUser, setIsFollowingUser] = useState(true);
   const [mapReady, setMapReady] = useState(false);
+  
+  // Get sector data from store
+  const { sectors: storeSectors } = useSectorStore();
 
-  // Load sector routes
-  useEffect(() => {
-    const loadRoutes = async () => {
-      console.log('🚀 Starting to load sector routes...');
-      const routes: Record<string, [number, number][]> = {};
-      
-      try {
-        // Load routes for each sector with delay to avoid rate limiting
-        for (let i = 0; i < sectors.length; i++) {
-          const sector = sectors[i];
-          console.log(`📍 Loading route ${i + 1}/${sectors.length} for: ${sector.name}`);
-          console.log(`   Start: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
-          console.log(`   End: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
-          
-          try {
-            const route = await fetchSectorRoute(sector);
-            if (route && route.length > 2) {
-              console.log(`✅ Route loaded for ${sector.name}: ${route.length} points`);
-              routes[sector.id] = route;
-            } else {
-              console.log(`⚠️ No valid route data for ${sector.name}, using straight line`);
-              routes[sector.id] = [
-                [sector.startPoint.lng, sector.startPoint.lat],
-                [sector.endPoint.lng, sector.endPoint.lat]
-              ];
-            }
-          } catch (error) {
-            console.log(`❌ Error loading route for ${sector.name}:`, error);
-            console.log(`📍 Using straight line fallback for ${sector.name}`);
-            routes[sector.id] = [
-              [sector.startPoint.lng, sector.startPoint.lat],
-              [sector.endPoint.lng, sector.endPoint.lat]
-            ];
-          }
-          
-          // Add delay between requests to avoid rate limiting
-          if (i < sectors.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Increased delay
-          }
-        }
-      } catch (error) {
-        console.error('💥 Error in loadRoutes:', error);
-        console.log('📍 Creating fallback straight line routes for all sectors');
-        sectors.forEach(sector => {
-          if (!routes[sector.id]) {
-            routes[sector.id] = [
-              [sector.startPoint.lng, sector.startPoint.lat],
-              [sector.endPoint.lng, sector.endPoint.lat]
-            ];
-          }
-        });
-      }
-      
-      console.log('🎉 All routes processing complete!');
-      console.log('📊 Routes summary:', Object.keys(routes).map(id => {
-        const sector = sectors.find(s => s.id === id);
-        return `${sector?.name}: ${routes[id].length} points`;
-      }));
-      
-      setSectorRoutes(routes);
-      setRoutesLoaded(true);
-      setIsLoading(false);
-    };
+  // Convert store sectors to routes format
+  const sectorRoutes = React.useMemo(() => {
+    const routes: Record<string, [number, number][]> = {};
     
-    loadRoutes().catch(error => {
-      console.error('💥 Failed to load routes:', error);
-      setIsLoading(false);
+    storeSectors.forEach(sector => {
+      if (sector.routeCoordinates && sector.routeCoordinates.length > 0) {
+        routes[sector.id] = sector.routeCoordinates;
+        console.log(`✅ Using store route for ${sector.name}: ${sector.routeCoordinates.length} points`);
+      } else {
+        // Fallback to straight line
+        routes[sector.id] = [
+          [sector.startPoint.lng, sector.startPoint.lat],
+          [sector.endPoint.lng, sector.endPoint.lat]
+        ];
+        console.log(`⚠️ Using straight line fallback for ${sector.name}`);
+      }
     });
-  }, []);
+    
+    return routes;
+  }, [storeSectors]);
+  
+  const routesLoaded = storeSectors.length > 0;
 
   // Update location on the map and handle automatic centering
   useEffect(() => {
@@ -156,37 +109,60 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
 
   // Update routes after map loads
   useEffect(() => {
-    if (routesLoaded && Object.keys(sectorRoutes).length > 0 && webViewRef.current) {
-      // Wait longer for the map to be fully loaded
+    console.log('🔄 Routes effect triggered:', { 
+      routesLoaded, 
+      routesCount: Object.keys(sectorRoutes).length, 
+      mapReady, 
+      hasWebView: !!webViewRef.current 
+    });
+    
+    if (routesLoaded && Object.keys(sectorRoutes).length > 0 && webViewRef.current && mapReady) {
+      // Wait for the map to be fully loaded
       const timer = setTimeout(() => {
         const validRoutes = Object.keys(sectorRoutes).filter(key => 
           sectorRoutes[key] && sectorRoutes[key].length > 2
         );
         
         console.log(`🎯 Injecting ${validRoutes.length} valid sector routes into map...`);
+        console.log('📊 Route details:', validRoutes.map(key => ({
+          id: key,
+          points: sectorRoutes[key].length,
+          firstPoint: sectorRoutes[key][0],
+          lastPoint: sectorRoutes[key][sectorRoutes[key].length - 1]
+        })));
+        
         const updateScript = `
           console.log('📱 Received ${validRoutes.length} valid routes from React Native');
+          console.log('📊 Routes data:', ${JSON.stringify(sectorRoutes)});
+          console.log('📊 Sectors data:', ${JSON.stringify(storeSectors)});
+          
           if (window.updateSectorRoutes) {
+            console.log('✅ updateSectorRoutes function found, calling it...');
             window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
-            window.addSectorMarkers(${JSON.stringify(sectors)}, ${JSON.stringify(sectorRoutes)});
+            window.addSectorMarkers(${JSON.stringify(storeSectors)}, ${JSON.stringify(sectorRoutes)});
+            console.log('✅ Sector routes and markers updated successfully');
           } else {
-            console.log('❌ updateSectorRoutes function not available yet');
+            console.log('❌ updateSectorRoutes function not available yet, retrying...');
             // Retry after a short delay
             setTimeout(() => {
               if (window.updateSectorRoutes) {
+                console.log('✅ updateSectorRoutes function found on retry, calling it...');
                 window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
-                window.addSectorMarkers(${JSON.stringify(sectors)}, ${JSON.stringify(sectorRoutes)});
+                window.addSectorMarkers(${JSON.stringify(storeSectors)}, ${JSON.stringify(sectorRoutes)});
+                console.log('✅ Sector routes and markers updated successfully on retry');
+              } else {
+                console.log('❌ updateSectorRoutes function still not available after retry');
               }
             }, 1000);
           }
           true;
         `;
         webViewRef.current?.injectJavaScript(updateScript);
-      }, 3000); // Increased wait time
+      }, 2000); // Increased wait time to ensure map is fully ready
       
       return () => clearTimeout(timer);
     }
-  }, [routesLoaded, sectorRoutes]);
+  }, [routesLoaded, sectorRoutes, mapReady, storeSectors]);
 
   // Function to calculate distance between two coordinates
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -336,9 +312,11 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         // Function to update sector routes
         window.updateSectorRoutes = function(routes) {
           console.log('🗺️ Updating sector routes on map:', Object.keys(routes));
+          console.log('🗺️ Routes received:', routes);
           
           if (map.getSource('sectors')) {
-            const sectorsData = ${JSON.stringify(sectors)};
+            const sectorsData = ${JSON.stringify(storeSectors)};
+            console.log('🗺️ Sectors data:', sectorsData);
             
             const features = sectorsData.map(sector => {
               const coordinates = routes[sector.id];
@@ -382,13 +360,24 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             }).filter(feature => feature !== null); // Remove null features
             
             console.log('🎯 Updating map with ' + features.length + ' sector features');
+            console.log('🎯 Features details:', features.map(f => ({
+              name: f.properties.name,
+              coordinates: f.geometry.coordinates.length,
+              firstCoord: f.geometry.coordinates[0],
+              lastCoord: f.geometry.coordinates[f.geometry.coordinates.length - 1]
+            })));
             
-            map.getSource('sectors').setData({
+            const geojsonData = {
               'type': 'FeatureCollection',
               'features': features
-            });
+            };
+            
+            console.log('🎯 Setting GeoJSON data:', geojsonData);
+            
+            map.getSource('sectors').setData(geojsonData);
             
             console.log('✅ Sector routes updated on map successfully');
+            console.log('✅ Map source sectors data:', map.getSource('sectors').serialize());
           } else {
             console.log('❌ Map source "sectors" not found');
           }
@@ -446,10 +435,12 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           // Notify React Native that map is ready
           window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'mapReady' }));
           // Add sectors data
-          const sectorsData = ${JSON.stringify(sectors)};
+          const sectorsData = ${JSON.stringify(storeSectors)};
+          console.log('🗺️ Initializing with sectors data:', sectorsData);
           
           // Start with empty features - routes will be added when they load
           const initialFeatures = [];
+          console.log('🗺️ Starting with empty features:', initialFeatures);
           
           // Add source for sector lines with initial straight lines
           map.addSource('sectors', {
@@ -459,6 +450,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
               'features': initialFeatures
             }
           });
+          console.log('🗺️ Added sectors source to map');
 
           // Add layer for sector lines
           map.addLayer({
@@ -487,6 +479,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
               'line-opacity': 0.8
             }
           });
+          console.log('🗺️ Added sectors-line layer to map');
 
           // Add start and end markers only for sectors that will have routes
           // Markers will be added when routes are loaded to avoid showing markers for sectors without routes
@@ -528,15 +521,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         <Text style={styles.title}>Карта на секторите</Text>
       </View>
       
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#00ff88" />
-          <Text style={styles.loadingText}>Зареждане на картата...</Text>
-          <Text style={styles.loadingSubtext}>Подготвяме секторите за вас</Text>
-          <Text style={styles.loadingNote}>Моля, изчакайте...</Text>
-        </View>
-      ) : (
-        <WebView
+      <WebView
           ref={webViewRef}
           style={styles.map}
           source={{ html: mapHTML }}
@@ -569,7 +554,6 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             }
           }}
         />
-      )}
 
       {/* Center and Follow buttons */}
       {location && (
