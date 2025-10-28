@@ -6,12 +6,6 @@
   "build": {
     "production": {
       "env": {
-        "SKIP_BUNDLING": "0",
-        "GYM_WORKSPACE": "Tracksy.xcworkspace",
-        "GYM_SCHEME": "Tracksy",
-        "FLIPPER": "0",
-        "USE_FRAMEWORKS": "static",
-        "RCT_NO_LAUNCH_PACKAGER": "1",
         "EXPO_PUBLIC_SUPABASE_URL": "https://ztlyoketfstcsjylvfyq.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI",
         "EXPO_PUBLIC_MAPBOX_TOKEN": "pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ"
