@@ -3,10 +3,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
 import * as AuthSession from 'expo-auth-session';
+import { ENV } from '../utils/env';
 
-// Supabase project details
-const supabaseUrl = 'https://ztlyoketfstcsjylvfyq.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI';
+// Supabase project details from environment
+const supabaseUrl = ENV.supabaseUrl || 'https://placeholder.supabase.co';
+const supabaseAnonKey = ENV.supabaseAnonKey || 'placeholder-key';
+
+if (!ENV.supabaseUrl || !ENV.supabaseAnonKey) {
+  console.error('❌ CRITICAL: Supabase credentials are missing!');
+  console.error('supabaseUrl:', ENV.supabaseUrl ? 'present' : 'MISSING');
+  console.error('supabaseAnonKey:', ENV.supabaseAnonKey ? 'present' : 'MISSING');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

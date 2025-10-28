@@ -7,10 +7,11 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSpeedStore } from "@/stores/speed-store";
 import { useSectorStore } from "@/stores/sector-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { StyleSheet, Platform } from 'react-native';
+import { StyleSheet, Platform, Alert } from 'react-native';
 import { AuthProvider, useAuth } from "@/stores/auth-store";
 import { DeviceProvider } from "@/stores/device-store";
 import { ViolationHistoryProvider } from "@/stores/violation-history-store";
+import { validateEnv } from "@/utils/env";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -64,6 +65,20 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        // Validate environment variables first
+        const envValidation = validateEnv();
+        if (!envValidation.valid && Platform.OS !== 'web') {
+          console.error('⚠️ App started with missing environment variables:', envValidation.errors);
+          // Show alert to user in development
+          if (__DEV__) {
+            Alert.alert(
+              'Configuration Error',
+              `Missing environment variables: ${envValidation.errors.join(', ')}. Please check your .env file.`,
+              [{ text: 'OK' }]
+            );
+          }
+        }
+        
         // Load settings first
         await loadSettings();
         
