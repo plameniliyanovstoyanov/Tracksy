@@ -69,14 +69,14 @@ export default function RootLayout() {
         const envValidation = validateEnv();
         if (!envValidation.valid && Platform.OS !== 'web') {
           console.error('⚠️ App started with missing environment variables:', envValidation.errors);
-          // Show alert to user in development
-          if (__DEV__) {
-            Alert.alert(
-              'Configuration Error',
-              `Missing environment variables: ${envValidation.errors.join(', ')}. Please check your .env file.`,
-              [{ text: 'OK' }]
-            );
-          }
+          // Show alert to user (ALWAYS, even in production for debugging)
+          Alert.alert(
+            '⚠️ Configuration Error',
+            `Missing environment variables:\n\n${envValidation.errors.join('\n')}\n\nPlease contact support if this persists.`,
+            [{ text: 'OK' }]
+          );
+        } else if (envValidation.valid) {
+          console.log('✅ All environment variables loaded successfully!');
         }
         
         // Load settings first

@@ -1,21 +1,29 @@
 import Constants from 'expo-constants';
 
-// Try multiple sources for environment variables
-const extra = Constants.expoConfig?.extra ?? Constants.manifest?.extra ?? {};
+// Safely try to get environment variables with fallbacks
+function getExtra() {
+  try {
+    return Constants.expoConfig?.extra ?? Constants.manifest?.extra ?? {};
+  } catch (error) {
+    console.error('❌ Failed to read Constants:', error);
+    return {};
+  }
+}
 
-console.log('📦 Constants.expoConfig:', Constants.expoConfig);
-console.log('📦 Constants.manifest:', Constants.manifest);
-console.log('📦 extra:', extra);
+const extra = getExtra();
+
+console.log('📦 Constants available:', Constants ? '✅' : '❌');
+console.log('📦 extra keys:', Object.keys(extra));
 
 export const ENV = {
-  supabaseUrl: String(extra.SUPABASE_URL || ''),
-  supabaseAnonKey: String(extra.SUPABASE_ANON_KEY || ''),
-  mapboxToken: String(extra.MAPBOX_TOKEN || ''),
+  supabaseUrl: String(extra.SUPABASE_URL || extra.EXPO_PUBLIC_SUPABASE_URL || ''),
+  supabaseAnonKey: String(extra.SUPABASE_ANON_KEY || extra.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''),
+  mapboxToken: String(extra.MAPBOX_TOKEN || extra.EXPO_PUBLIC_MAPBOX_TOKEN || ''),
 };
 
-console.log('🔑 ENV.supabaseUrl:', ENV.supabaseUrl ? '✅ Found' : '❌ Missing');
-console.log('🔑 ENV.supabaseAnonKey:', ENV.supabaseAnonKey ? '✅ Found' : '❌ Missing');
-console.log('🔑 ENV.mapboxToken:', ENV.mapboxToken ? '✅ Found' : '❌ Missing');
+console.log('🔑 ENV.supabaseUrl:', ENV.supabaseUrl ? `✅ Found (${ENV.supabaseUrl.substring(0, 20)}...)` : '❌ Missing');
+console.log('🔑 ENV.supabaseAnonKey:', ENV.supabaseAnonKey ? `✅ Found (${ENV.supabaseAnonKey.substring(0, 20)}...)` : '❌ Missing');
+console.log('🔑 ENV.mapboxToken:', ENV.mapboxToken ? `✅ Found (${ENV.mapboxToken.substring(0, 20)}...)` : '❌ Missing');
 
 /**
  * Validates that all required environment variables are present
