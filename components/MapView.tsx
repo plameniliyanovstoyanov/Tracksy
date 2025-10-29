@@ -28,12 +28,17 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
     const routes: Record<string, [number, number][]> = {};
     
     storeSectors.forEach(sector => {
-      // Always use straight line for now to ensure lines are visible
-      routes[sector.id] = [
-        [sector.startPoint.lng, sector.startPoint.lat],
-        [sector.endPoint.lng, sector.endPoint.lat]
-      ];
-      console.log(`📍 Using straight line for ${sector.name}: ${sector.startPoint.lat},${sector.startPoint.lng} -> ${sector.endPoint.lat},${sector.endPoint.lng}`);
+      if (sector.routeCoordinates && sector.routeCoordinates.length > 0) {
+        routes[sector.id] = sector.routeCoordinates;
+        console.log(`✅ Using store route for ${sector.name}: ${sector.routeCoordinates.length} points`);
+      } else {
+        // Fallback to straight line
+        routes[sector.id] = [
+          [sector.startPoint.lng, sector.startPoint.lat],
+          [sector.endPoint.lng, sector.endPoint.lat]
+        ];
+        console.log(`⚠️ Using straight line fallback for ${sector.name}`);
+      }
     });
     
     return routes;
