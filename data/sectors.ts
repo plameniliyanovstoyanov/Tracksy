@@ -722,4 +722,44 @@ export const sectors: Sector[] = [
     },
     active: true,
   },
+  // Бул. Европа - посока 1
+  {
+    id: '34',
+    name: 'Бул. Европа - посока 1',
+    route: 'Бул. Европа',
+    speedLimit: 50,
+    distance: 1.8,
+    description: 'Тестов сектор на бул. Европа - посока 1.',
+    startPoint: {
+      lat: 42.736354,
+      lng: 23.245074,
+      name: 'Начало бул. Европа',
+    },
+    endPoint: {
+      lat: 42.745108,
+      lng: 23.229652,
+      name: 'Край бул. Европа',
+    },
+    active: true,
+  },
+  // Бул. Европа - посока 2
+  {
+    id: '35',
+    name: 'Бул. Европа - посока 2',
+    route: 'Бул. Европа',
+    speedLimit: 50,
+    distance: 1.8,
+    description: 'Тестов сектор на бул. Европа - посока 2.',
+    startPoint: {
+      lat: 42.745020,
+      lng: 23.229530,
+      name: 'Начало бул. Европа',
+    },
+    endPoint: {
+      lat: 42.736262,
+      lng: 23.244937,
+      name: 'Край бул. Европа',
+    },
+    active: true,
+  },
 ];

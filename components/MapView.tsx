@@ -28,17 +28,12 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
     const routes: Record<string, [number, number][]> = {};
     
     storeSectors.forEach(sector => {
-      if (sector.routeCoordinates && sector.routeCoordinates.length > 0) {
-        routes[sector.id] = sector.routeCoordinates;
-        console.log(`✅ Using store route for ${sector.name}: ${sector.routeCoordinates.length} points`);
-      } else {
-        // Fallback to straight line
-        routes[sector.id] = [
-          [sector.startPoint.lng, sector.startPoint.lat],
-          [sector.endPoint.lng, sector.endPoint.lat]
-        ];
-        console.log(`⚠️ Using straight line fallback for ${sector.name}`);
-      }
+      // Always use straight line for now to ensure lines are visible
+      routes[sector.id] = [
+        [sector.startPoint.lng, sector.startPoint.lat],
+        [sector.endPoint.lng, sector.endPoint.lat]
+      ];
+      console.log(`📍 Using straight line for ${sector.name}: ${sector.startPoint.lat},${sector.startPoint.lng} -> ${sector.endPoint.lat},${sector.endPoint.lng}`);
     });
     
     return routes;
@@ -472,6 +467,8 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
                 ['==', ['get', 'route'], 'Път I-2'], '#fd79a8',
                 ['==', ['get', 'route'], 'Път I-3'], '#a29bfe',
                 ['==', ['get', 'route'], 'Път I-4'], '#ffeaa7',
+                ['==', ['get', 'route'], 'Бул. България'], '#ff9ff3',
+                ['==', ['get', 'route'], 'Бул. Европа'], '#ff6b9d',
                 ['==', ['get', 'route'], 'Тест'], '#00ff88',
                 '#ffaa00'
               ],
