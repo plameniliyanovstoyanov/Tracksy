@@ -2,10 +2,12 @@ import { create } from 'zustand';
 import { combine } from 'zustand/middleware';
 import { sectors as initialSectors, Sector } from '@/data/sectors';
 import * as Notifications from 'expo-notifications';
+import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 import { fetchSectorRoute } from '@/utils/mapbox-directions';
 import { trpcClient } from '@/lib/trpc';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getNotificationSettings } from './settings-store';
 
 interface Location {
   latitude: number;
@@ -49,8 +51,8 @@ interface SectorState {
 
 interface SectorActions {
   initializeNotifications: () => Promise<void>;
-  checkSectorEntry: (location: Location) => void;
-  checkSectorExit: (location: Location, deviceId?: string) => void;
+  checkSectorEntry: (location: Location) => Promise<void>;
+  checkSectorExit: (location: Location, deviceId?: string) => Promise<void>;
   updateSectorSpeed: (speed: number) => void;
   updateSectorProgress: (location: Location) => void;
   loadSectorRoutes: () => Promise<void>;
@@ -244,7 +246,7 @@ export const useSectorStore = create(
         }
       },
 
-      checkSectorEntry: (location: Location) => {
+      checkSectorEntry: async (location: Location) => {
         const state = get();
         const { sectors, currentSector, lastSectorCheckTime, sectorConfirmationCount } = state;
         
@@ -312,20 +314,31 @@ export const useSectorStore = create(
                 lastSpeedUpdateTime: Date.now()
               });
               
-              // Изпращаме известие
+              // Изпращаме известие ако е разрешено
               if (Platform.OS !== 'web') {
-                Notifications.scheduleNotificationAsync({
-                  content: {
-                    title: `Влязохте в сектор: ${newSector.name}`,
-                    body: `Ограничение: ${newSector.speedLimit} ��м/ч`,
-                    data: { sectorId: newSector.id },
-                    sound: true,
-                    vibrate: [0, 250, 250, 250],
-                  },
-                  trigger: null,
-                }).catch(error => {
-                  console.error('Failed to send notification:', error);
-                });
+                const settings = await getNotificationSettings();
+                
+                // Вибрация само ако е включена в настройките
+                if (settings.vibrationEnabled) {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+                }
+                
+                // Известие само ако е включено в настройките
+                if (settings.notificationsEnabled) {
+                  Notifications.scheduleNotificationAsync({
+                    content: {
+                      title: `🚗 Влязохте в сектор: ${newSector.name}`,
+                      body: `⚠️ Ограничение: ${newSector.speedLimit} км/ч`,
+                      data: { sectorId: newSector.id, type: 'sector-entry' },
+                      sound: settings.soundEnabled, // Зачитаме настройката за звук
+                      vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
+                      priority: Notifications.AndroidNotificationPriority.HIGH,
+                    },
+                    trigger: null,
+                  }).catch(error => {
+                    console.error('Failed to send notification:', error);
+                  });
+                }
               }
             } else {
               // Увеличаваме брояча
@@ -342,7 +355,7 @@ export const useSectorStore = create(
         }
       },
 
-      checkSectorExit: (location: Location, deviceId?: string) => {
+      checkSectorExit: async (location: Location, deviceId?: string) => {
         const state = get();
         const { currentSector, currentSectorAverageSpeed, exitConfirmationCount, lastSectorCheckTime } = state;
         
@@ -396,18 +409,34 @@ export const useSectorStore = create(
             }
             
             if (Platform.OS !== 'web') {
-              Notifications.scheduleNotificationAsync({
-                content: {
-                  title: `Излязохте от сектор: ${currentSector.name}`,
-                  body: `Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч`,
-                  data: { sectorId: currentSector.id },
-                  sound: true,
-                  vibrate: [0, 250, 250, 250],
-                },
-                trigger: null,
-              }).catch(error => {
-                console.error('Failed to send notification:', error);
-              });
+              const settings = await getNotificationSettings();
+              const exceeded = currentSectorAverageSpeed > currentSector.speedLimit;
+              
+              // Вибрация само ако е включена в настройките
+              if (settings.vibrationEnabled) {
+                if (exceeded) {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+                } else {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+                }
+              }
+              
+              // Известие само ако е включено в настройките
+              if (settings.notificationsEnabled) {
+                Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: `✅ Излязохте от сектор: ${currentSector.name}`,
+                    body: `📊 Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n${exceeded ? '⚠️ Превишена средна скорост!' : '✅ В рамките на ограничението'}`,
+                    data: { sectorId: currentSector.id, type: 'sector-exit', exceeded },
+                    sound: settings.soundEnabled, // Зачитаме настройката за звук
+                    vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
+                    priority: Notifications.AndroidNotificationPriority.HIGH,
+                  },
+                  trigger: null,
+                }).catch(error => {
+                  console.error('Failed to send notification:', error);
+                });
+              }
             }
             
             set({ 
@@ -600,17 +629,34 @@ export const useSectorStore = create(
       loadSectorRoutes: async () => {
         try {
           console.log('Loading sector routes from Mapbox...');
-          const loadedSectors = await Promise.all(
+          
+          // Check if we have environment loaded
+          const { ENV } = await import('@/utils/env');
+          if (!ENV.mapboxToken || ENV.mapboxToken === '') {
+            console.warn('⚠️ Mapbox token not available, using fallback straight line routes');
+            const fallbackSectors = initialSectors.map(sector => ({
+              ...sector,
+              routeCoordinates: [
+                [sector.startPoint.lng, sector.startPoint.lat],
+                [sector.endPoint.lng, sector.endPoint.lat]
+              ]
+            } as SectorWithRoute));
+            set({ sectors: fallbackSectors });
+            return;
+          }
+          
+          // Use Promise.allSettled instead of Promise.all to continue even if some routes fail
+          const results = await Promise.allSettled(
             initialSectors.map(async (sector) => {
               try {
                 console.log(`Fetching route for sector ${sector.name}`);
                 const route = await fetchSectorRoute(sector);
                 
                 if (route && route.length > 0) {
-                  console.log(`Got ${route.length} points for sector ${sector.name}`);
+                  console.log(`✅ Got ${route.length} points for sector ${sector.name}`);
                   return { ...sector, routeCoordinates: route } as SectorWithRoute;
                 } else {
-                  console.log(`Failed to load route for ${sector.name}, using straight line`);
+                  console.log(`⚠️ Failed to load route for ${sector.name}, using straight line`);
                   return { 
                     ...sector, 
                     routeCoordinates: [
@@ -620,7 +666,7 @@ export const useSectorStore = create(
                   } as SectorWithRoute;
                 }
               } catch (error) {
-                console.error(`Error loading route for ${sector.name}:`, error);
+                console.error(`❌ Error loading route for ${sector.name}:`, error);
                 return { 
                   ...sector, 
                   routeCoordinates: [
@@ -632,7 +678,25 @@ export const useSectorStore = create(
             })
           );
           
-          console.log('All sector routes loaded');
+          // Extract successful results
+          const loadedSectors = results.map((result, index) => {
+            if (result.status === 'fulfilled') {
+              return result.value;
+            } else {
+              console.error(`Failed to load sector ${initialSectors[index].name}:`, result.reason);
+              // Return sector with fallback straight line route
+              return {
+                ...initialSectors[index],
+                routeCoordinates: [
+                  [initialSectors[index].startPoint.lng, initialSectors[index].startPoint.lat],
+                  [initialSectors[index].endPoint.lng, initialSectors[index].endPoint.lat]
+                ]
+              } as SectorWithRoute;
+            }
+          });
+          
+          const successCount = results.filter(r => r.status === 'fulfilled').length;
+          console.log(`✅ Loaded ${successCount}/${initialSectors.length} sector routes successfully`);
           set({ sectors: loadedSectors });
           
           // Запазваме секторите с маршрути в AsyncStorage за background task
@@ -644,8 +708,15 @@ export const useSectorStore = create(
           }
         } catch (error) {
           console.error('Error loading sector routes:', error);
-          // Fallback to sectors without routes
-          set({ sectors: initialSectors });
+          // Fallback to sectors without routes but with straight line coordinates
+          const fallbackSectors = initialSectors.map(sector => ({
+            ...sector,
+            routeCoordinates: [
+              [sector.startPoint.lng, sector.startPoint.lat],
+              [sector.endPoint.lng, sector.endPoint.lat]
+            ]
+          } as SectorWithRoute));
+          set({ sectors: fallbackSectors });
         }
       },
 
@@ -656,9 +727,12 @@ export const useSectorStore = create(
           // In the future, this could load custom sectors from AsyncStorage
           set({ sectors: initialSectors });
           
-          // Load routes after setting sectors
+          // Load routes in the background (don't wait for it)
           const actions = get() as SectorState & SectorActions;
-          await actions.loadSectorRoutes();
+          actions.loadSectorRoutes().catch(error => {
+            console.error('Failed to load sector routes in background:', error);
+          });
+          console.log('✅ Sectors initialized, routes loading in background');
         } catch (error) {
           console.error('Failed to load sectors from storage:', error);
           // Fallback to default sectors

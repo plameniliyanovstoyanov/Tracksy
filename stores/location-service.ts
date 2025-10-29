@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
+import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sectors } from '@/data/sectors';
@@ -439,22 +440,48 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               const avgSpeed = speedReadings.length > 0 ? speedReadings.reduce((a, b) => a + b, 0) / speedReadings.length : 0;
               
               if (exitingSector) {
-                // Изпращаме известие за излизане
-                await Notifications.scheduleNotificationAsync({
-                  content: {
-                    title: `✅ Край на сектор`,
-                    body: `📍 ${exitingSector.name}\n📊 Средна скорост: ${avgSpeed.toFixed(1)} км/ч\n${avgSpeed > exitingSector.speedLimit ? '⚠️ Превишена средна скорост!' : '✅ В рамките на ограничението'}`,
-                    data: { 
-                      sectorId: exitingSector.id,
-                      type: 'sector-exit',
-                      averageSpeed: avgSpeed,
-                      speedLimit: exitingSector.speedLimit
+                // Проверяваме настройките
+                const settingsStr = await AsyncStorage.getItem('app-settings');
+                const settings = settingsStr ? JSON.parse(settingsStr) : {
+                  notificationsEnabled: true,
+                  vibrationEnabled: true,
+                  soundEnabled: true
+                };
+                
+                const exceeded = avgSpeed > exitingSector.speedLimit;
+                
+                // Вибрация само ако е включена
+                if (settings.vibrationEnabled) {
+                  try {
+                    if (exceeded) {
+                      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                    } else {
+                      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    }
+                  } catch (e) {
+                    console.log('Haptics not available:', e);
+                  }
+                }
+                
+                // Изпращаме известие само ако е включено
+                if (settings.notificationsEnabled) {
+                  await Notifications.scheduleNotificationAsync({
+                    content: {
+                      title: `✅ Край на сектор`,
+                      body: `📍 ${exitingSector.name}\n📊 Средна скорост: ${avgSpeed.toFixed(1)} км/ч\n${avgSpeed > exitingSector.speedLimit ? '⚠️ Превишена средна скорост!' : '✅ В рамките на ограничението'}`,
+                      data: { 
+                        sectorId: exitingSector.id,
+                        type: 'sector-exit',
+                        averageSpeed: avgSpeed,
+                        speedLimit: exitingSector.speedLimit
+                      },
+                      sound: settings.soundEnabled ?? true,
+                      vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
+                      priority: 'high',
                     },
-                    sound: true,
-                    priority: 'high',
-                  },
-                  trigger: null,
-                });
+                    trigger: null,
+                  });
+                }
 
                 console.log(`Exited sector ${exitingSector.name} with avg speed ${avgSpeed.toFixed(1)} km/h`);
               }
@@ -551,23 +578,43 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             trackingState.entryConfirmations = {};
             trackingState.exitConfirmations = 0;
             
-            // Изпращаме известие за влизане
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: `🚗 Влизане в сектор`,
-                body: `📍 ${newSector.name}\n⚠️ Ограничение: ${newSector.speedLimit} км/ч\n🏃 Текуща скорост: ${speed.toFixed(0)} км/ч`,
-                data: { 
-                  sectorId: newSector.id,
-                  type: 'sector-entry',
-                  speedLimit: newSector.speedLimit,
-                  currentSpeed: speed,
-                  entryTime: entryTime
+            // Проверяваме настройките
+            const settingsStr = await AsyncStorage.getItem('app-settings');
+            const settings = settingsStr ? JSON.parse(settingsStr) : {
+              notificationsEnabled: true,
+              vibrationEnabled: true,
+              soundEnabled: true
+            };
+            
+            // Вибрация само ако е включена
+            if (settings.vibrationEnabled) {
+              try {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              } catch (e) {
+                console.log('Haptics not available:', e);
+              }
+            }
+            
+            // Изпращаме известие само ако е включено
+            if (settings.notificationsEnabled) {
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: `🚗 Влизане в сектор`,
+                  body: `📍 ${newSector.name}\n⚠️ Ограничение: ${newSector.speedLimit} км/ч\n🏃 Текуща скорост: ${speed.toFixed(0)} км/ч`,
+                  data: { 
+                    sectorId: newSector.id,
+                    type: 'sector-entry',
+                    speedLimit: newSector.speedLimit,
+                    currentSpeed: speed,
+                    entryTime: entryTime
+                  },
+                  sound: settings.soundEnabled ?? true,
+                  vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
+                  priority: 'high',
                 },
-                sound: true,
-                priority: 'high',
-              },
-              trigger: null,
-            });
+                trigger: null,
+              });
+            }
             
             console.log(`Entered sector ${newSector.name} with speed ${speed.toFixed(1)} km/h`);
           }
@@ -629,22 +676,33 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           if (speed > activeSector.speedLimit + 5 && now - lastSpeedWarning > 30000) {
             trackingState.lastNotificationTime[`speed-${activeSector.id}`] = now;
             
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: `⚠️ Превишена скорост!`,
-                body: `🚨 ${speed.toFixed(0)} км/ч (лимит: ${activeSector.speedLimit} км/ч)\n📊 Средна: ${avgSpeed.toFixed(1)} км/ч`,
-                data: { 
-                  sectorId: activeSector.id,
-                  type: 'speed-violation',
-                  currentSpeed: speed,
-                  averageSpeed: avgSpeed,
-                  speedLimit: activeSector.speedLimit
+            // Проверяваме настройките преди да изпратим известие
+            const settingsStr = await AsyncStorage.getItem('app-settings');
+            const settings = settingsStr ? JSON.parse(settingsStr) : {
+              notificationsEnabled: true,
+              vibrationEnabled: true,
+              soundEnabled: true
+            };
+            
+            if (settings.notificationsEnabled) {
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: `⚠️ Превишена скорост!`,
+                  body: `🚨 ${speed.toFixed(0)} км/ч (лимит: ${activeSector.speedLimit} км/ч)\n📊 Средна: ${avgSpeed.toFixed(1)} км/ч`,
+                  data: { 
+                    sectorId: activeSector.id,
+                    type: 'speed-violation',
+                    currentSpeed: speed,
+                    averageSpeed: avgSpeed,
+                    speedLimit: activeSector.speedLimit
+                  },
+                  sound: settings.soundEnabled ?? true,
+                  vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
+                  priority: 'max',
                 },
-                sound: true,
-                priority: 'max',
-              },
-              trigger: null,
-            });
+                trigger: null,
+              });
+            }
           }
           
           // Проверяваме за превишаване на средната скорост
@@ -652,26 +710,37 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           if (avgSpeed > activeSector.speedLimit && now - lastAvgWarning > 60000) {
             trackingState.lastNotificationTime[`avg-${activeSector.id}`] = now;
             
-            const warningBody = recommendedSpeed && recommendedSpeed > 0
-              ? `📊 Средна: ${avgSpeed.toFixed(1)} км/ч\n💡 Намалете до ${recommendedSpeed.toFixed(0)} км/ч за компенсация`
-              : `📊 Средна: ${avgSpeed.toFixed(1)} км/ч\n⛔ Карайте много бавно!`;
+            // Проверяваме настройките преди да изпратим известие
+            const settingsStr = await AsyncStorage.getItem('app-settings');
+            const settings = settingsStr ? JSON.parse(settingsStr) : {
+              notificationsEnabled: true,
+              vibrationEnabled: true,
+              soundEnabled: true
+            };
             
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: `🚨 Превишена средна скорост!`,
-                body: warningBody,
-                data: { 
-                  sectorId: activeSector.id,
-                  type: 'average-speed-violation',
-                  averageSpeed: avgSpeed,
-                  recommendedSpeed,
-                  speedLimit: activeSector.speedLimit
+            if (settings.notificationsEnabled) {
+              const warningBody = recommendedSpeed && recommendedSpeed > 0
+                ? `📊 Средна: ${avgSpeed.toFixed(1)} км/ч\n💡 Намалете до ${recommendedSpeed.toFixed(0)} км/ч за компенсация`
+                : `📊 Средна: ${avgSpeed.toFixed(1)} км/ч\n⛔ Карайте много бавно!`;
+              
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: `🚨 Превишена средна скорост!`,
+                  body: warningBody,
+                  data: { 
+                    sectorId: activeSector.id,
+                    type: 'average-speed-violation',
+                    averageSpeed: avgSpeed,
+                    recommendedSpeed,
+                    speedLimit: activeSector.speedLimit
+                  },
+                  sound: settings.soundEnabled ?? true,
+                  vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
+                  priority: 'high',
                 },
-                sound: true,
-                priority: 'high',
-              },
-              trigger: null,
-            });
+                trigger: null,
+              });
+            }
           }
           
           // Запазваме актуализираното състояние

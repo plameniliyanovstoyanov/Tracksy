@@ -29,6 +29,24 @@ interface Sector {
   };
 }
 
+// Helper function to fetch with timeout
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 5000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
 export async function fetchSectorRoute(sector: Sector): Promise<[number, number][] | null> {
   try {
     // Create cache key
@@ -44,8 +62,8 @@ export async function fetchSectorRoute(sector: Sector): Promise<[number, number]
     }
 
     // Check if Mapbox token is available
-    if (!MAPBOX_TOKEN) {
-      console.error(`❌ Mapbox token not found. Please set EXPO_PUBLIC_MAPBOX_TOKEN in your environment variables.`);
+    if (!MAPBOX_TOKEN || MAPBOX_TOKEN === '') {
+      console.warn(`⚠️ Mapbox token not found for ${sector.name}. Using fallback route.`);
       return null;
     }
 
@@ -73,12 +91,13 @@ export async function fetchSectorRoute(sector: Sector): Promise<[number, number]
         console.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
         console.log(`📍 To: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
         
-        const response = await fetch(url, {
+        // Use fetch with 5 second timeout to prevent hanging
+        const response = await fetchWithTimeout(url, {
           method: 'GET',
           headers: {
             'Accept': 'application/json',
           },
-        });
+        }, 5000);
         
         console.log(`📡 Response status for ${profile}: ${response.status}`);
         

@@ -9,6 +9,17 @@ import * as WebBrowser from 'expo-web-browser';
 
 WebBrowser.maybeCompleteAuthSession();
 
+// Helper to add timeout to promises
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => {
+      console.warn(`Operation timed out after ${timeoutMs}ms, using fallback`);
+      resolve(fallbackValue);
+    }, timeoutMs))
+  ]);
+};
+
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -93,8 +104,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        // First, try to get authenticated session
-        const { data: { session } } = await supabase.auth.getSession();
+        // First, try to get authenticated session with timeout (3 seconds)
+        const sessionResult = await withTimeout(
+          supabase.auth.getSession(),
+          3000,
+          { data: { session: null }, error: null }
+        );
+        
+        const session = sessionResult?.data?.session;
         
         if (session) {
           // User is authenticated
@@ -106,12 +123,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           const generatedDeviceId = await generateDeviceId();
           setDeviceId(generatedDeviceId);
           
-          // Create anonymous user record in database
-          try {
-            await createAnonymousUser(generatedDeviceId);
-          } catch (error) {
+          // Create anonymous user record in database (don't wait for it)
+          createAnonymousUser(generatedDeviceId).catch(error => {
             console.error('Error creating anonymous user:', error instanceof Error ? error.message : String(error));
-          }
+          });
           setIsAnonymous(true);
         }
       } catch (error) {

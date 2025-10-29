@@ -28,6 +28,7 @@ interface SettingsActions {
   loadFromStorage: () => Promise<void>;
   saveToStorage: () => Promise<void>;
   requestNotificationPermissions: () => Promise<void>;
+  getSettings: () => { notificationsEnabled: boolean; vibrationEnabled: boolean; soundEnabled: boolean; };
 }
 
 export const useSettingsStore = create(
@@ -182,9 +183,11 @@ export const useSettingsStore = create(
               earlyWarningEnabled: parsed.earlyWarningEnabled ?? true,
             });
             
-            // Check if background tracking is actually running
+            // Check if background tracking is actually running (in background)
             const actions = get() as SettingsState & SettingsActions;
-            await actions.checkBackgroundTrackingStatus();
+            actions.checkBackgroundTrackingStatus().catch(err => {
+              console.error('Failed to check background tracking status:', err);
+            });
           }
         } catch (error) {
           console.error('Failed to load settings from storage:', error);
@@ -226,7 +229,44 @@ export const useSettingsStore = create(
           console.error('Failed to request notification permissions:', error);
         }
       },
+
+      getSettings: () => {
+        const state = get();
+        return {
+          notificationsEnabled: state.notificationsEnabled,
+          vibrationEnabled: state.vibrationEnabled,
+          soundEnabled: state.soundEnabled,
+        };
+      },
     } as SettingsActions)
   )
 );
+
+// Helper function to get current settings
+export const getNotificationSettings = async (): Promise<{
+  notificationsEnabled: boolean;
+  vibrationEnabled: boolean;
+  soundEnabled: boolean;
+}> => {
+  try {
+    const data = await AsyncStorage.getItem('app-settings');
+    if (data) {
+      const parsed = JSON.parse(data);
+      return {
+        notificationsEnabled: parsed.notificationsEnabled ?? true,
+        vibrationEnabled: parsed.vibrationEnabled ?? true,
+        soundEnabled: parsed.soundEnabled ?? true,
+      };
+    }
+  } catch (error) {
+    console.error('Failed to load settings:', error);
+  }
+  
+  // Default values
+  return {
+    notificationsEnabled: true,
+    vibrationEnabled: true,
+    soundEnabled: true,
+  };
+};
 

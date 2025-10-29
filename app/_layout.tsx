@@ -7,7 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSpeedStore } from "@/stores/speed-store";
 import { useSectorStore } from "@/stores/sector-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { StyleSheet, Platform, Alert } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import { AuthProvider, useAuth } from "@/stores/auth-store";
 import { DeviceProvider } from "@/stores/device-store";
 import { ViolationHistoryProvider } from "@/stores/violation-history-store";
@@ -67,25 +67,23 @@ export default function RootLayout() {
       try {
         // Validate environment variables first
         const envValidation = validateEnv();
-        if (!envValidation.valid && Platform.OS !== 'web') {
+        if (!envValidation.valid) {
           console.error('⚠️ App started with missing environment variables:', envValidation.errors);
-          // Show alert to user (ALWAYS, even in production for debugging)
-          Alert.alert(
-            '⚠️ Configuration Error',
-            `Missing environment variables:\n\n${envValidation.errors.join('\n')}\n\nPlease contact support if this persists.`,
-            [{ text: 'OK' }]
-          );
-        } else if (envValidation.valid) {
+          console.error('Please ensure all required environment variables are set in .env file');
+          // Don't show alert immediately as it blocks the UI - let the app load first
+          // User will see errors in specific features when they try to use them
+        } else {
           console.log('✅ All environment variables loaded successfully!');
         }
         
         // Load settings first
         await loadSettings();
         
-        // Then load other data in parallel
+        // Then load other data in parallel (without waiting for sector routes)
         await Promise.all([
           loadSpeedData(),
-          loadSectorData(),
+          // Load sector data but don't wait for routes to load
+          loadSectorData().catch(err => console.error('Error loading sector data:', err)),
         ]);
         
         // Request permissions if needed
@@ -100,7 +98,9 @@ export default function RootLayout() {
       } catch (error) {
         console.error('Failed to initialize app:', error);
       } finally {
+        // Hide splash screen immediately after basic initialization
         await SplashScreen.hideAsync().catch(() => {});
+        console.log('✅ Splash screen hidden, app is ready');
       }
     };
 
