@@ -19,7 +19,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "bg.tracksy.app",
-      buildNumber: "9",
+      buildNumber: "10",
       infoPlist: {
         NSLocationAlwaysAndWhenInUseUsageDescription: "Allow $(PRODUCT_NAME) to use your location.",
         NSLocationAlwaysUsageDescription: "Allow $(PRODUCT_NAME) to use your location.",

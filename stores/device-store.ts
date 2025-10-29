@@ -4,6 +4,17 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
+// Helper to add timeout to promises
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => {
+      console.warn(`Operation timed out after ${timeoutMs}ms, using fallback`);
+      resolve(fallbackValue);
+    }, timeoutMs))
+  ]);
+};
+
 export const [DeviceProvider, useDevice] = createContextHook(() => {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,17 +107,19 @@ export const [DeviceProvider, useDevice] = createContextHook(() => {
         const generatedDeviceId = await generateDeviceId();
         setDeviceId(generatedDeviceId);
         
-        // Create anonymous user record in database
-        try {
-          await createAnonymousUser(generatedDeviceId);
-        } catch (error) {
+        // Create anonymous user record in database (don't wait for it - do it in background)
+        createAnonymousUser(generatedDeviceId).catch(error => {
           console.error('Error creating anonymous user:', error instanceof Error ? error.message : String(error));
-        }
+        });
       } catch (error) {
         console.error('Error initializing device:', error);
         // Fallback to just device ID
-        const fallbackId = await generateDeviceId();
-        setDeviceId(fallbackId);
+        try {
+          const fallbackId = await generateDeviceId();
+          setDeviceId(fallbackId);
+        } catch (e) {
+          console.error('Even fallback failed:', e);
+        }
       } finally {
         setLoading(false);
       }
