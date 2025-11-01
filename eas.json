@@ -17,8 +17,7 @@
         "image": "latest"
       },
       "android": {
-        "buildType": "apk",
-        "cache": { "cacheDefaultPaths": true }
+        "buildType": "app-bundle"
       }
     },
     "development": {

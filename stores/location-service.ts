@@ -303,13 +303,12 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         // Проверяваме настройките за ранни предупреждения
         const settingsStr = await AsyncStorage.getItem('app-settings');
         const settings = settingsStr ? JSON.parse(settingsStr) : { 
-          earlyWarningEnabled: true, 
-          warningDistances: [1000, 2000, 3000] 
+          earlyWarningEnabled: true
         };
         
         // Проверяваме за предупреждения преди влизане в сектор (само ако е включено и не сме вече в сектор)
         if (settings.earlyWarningEnabled && !trackingState.currentSectorId) {
-          const warningDistances = settings.warningDistances || [1000, 2000, 3000];
+          const WARNING_DISTANCE = 2000; // Фиксирано разстояние: 2км
           
           for (const sector of sectors) {
             if (!sector.active) continue;
@@ -324,60 +323,53 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               route: []
             };
             
-            // Проверяваме за всяко разстояние за предупреждение
-            for (const warningDistance of warningDistances) {
-              const warningKey = `warning-${sector.id}-${warningDistance}`;
-              
-              // ВАЖНО: Проверяваме дали се приближаваме ПО ПРАВИЛНИЯ ПЪТ
-              const isApproaching = isApproachingSectorOnRoute(location.coords, sectorCheck, warningDistance);
-              
-              if (isApproaching) {
-                // Проверяваме дали не сме изпратили известие скоро за това разстояние
-                const lastWarningTime = trackingState.lastNotificationTime[warningKey] || 0;
-                if (now - lastWarningTime > 120000) { // Минимум 2 минути между предупрежденията за едно разстояние
-                  trackingState.lastNotificationTime[warningKey] = now;
-                  
-                  // Определяме текста според разстоянието
-                  let distanceText = '';
-                  const actualDistance = getDistance(location.coords.latitude, location.coords.longitude, sector.startPoint.lat, sector.startPoint.lng);
-                  if (actualDistance >= 1000) {
-                    distanceText = `${(actualDistance / 1000).toFixed(1)}км`;
-                  } else {
-                    distanceText = `${Math.round(actualDistance)}м`;
-                  }
-                  
-                  // Изпращаме предупредително известие
-                  await Notifications.scheduleNotificationAsync({
-                    content: {
-                      title: `⚠️ Сектор след ${distanceText}`,
-                      body: `📍 ${sector.name}\n🚗 Ограничение: ${sector.speedLimit} км/ч\n🛣️ На правилния път`,
-                      data: { 
-                        sectorId: sector.id,
-                        type: 'sector-warning',
-                        speedLimit: sector.speedLimit,
-                        sectorName: sector.name,
-                        distance: actualDistance
-                      },
-                      sound: settings.soundEnabled ?? true,
-                      priority: 'high',
-                    },
-                    trigger: null,
-                  });
-                  
-                  console.log(`Warning: Approaching sector ${sector.name} on correct route at ${distanceText}`);
+            const warningKey = `warning-${sector.id}`;
+            
+            // ВАЖНО: Проверяваме дали се приближаваме ПО ПРАВИЛНИЯ ПЪТ
+            const isApproaching = isApproachingSectorOnRoute(location.coords, sectorCheck, WARNING_DISTANCE);
+            
+            if (isApproaching) {
+              // Проверяваме дали не сме изпратили известие скоро
+              const lastWarningTime = trackingState.lastNotificationTime[warningKey] || 0;
+              if (now - lastWarningTime > 120000) { // Минимум 2 минути между предупрежденията
+                trackingState.lastNotificationTime[warningKey] = now;
+                
+                // Определяме текста според разстоянието
+                let distanceText = '';
+                const actualDistance = getDistance(location.coords.latitude, location.coords.longitude, sector.startPoint.lat, sector.startPoint.lng);
+                if (actualDistance >= 1000) {
+                  distanceText = `${(actualDistance / 1000).toFixed(1)}км`;
+                } else {
+                  distanceText = `${Math.round(actualDistance)}м`;
                 }
+                
+                // Изпращаме предупредително известие
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: `⚠️ Сектор след ${distanceText}`,
+                    body: `📍 ${sector.name}\n🚗 Ограничение: ${sector.speedLimit} км/ч\n🛣️ На правилния път`,
+                    data: { 
+                      sectorId: sector.id,
+                      type: 'sector-warning',
+                      speedLimit: sector.speedLimit,
+                      sectorName: sector.name,
+                      distance: actualDistance
+                    },
+                    sound: settings.soundEnabled ?? true,
+                    priority: 'high',
+                  },
+                  trigger: null,
+                });
+                
+                console.log(`Warning: Approaching sector ${sector.name} on correct route at ${distanceText}`);
               }
             }
             
             // Почистваме стари предупреждения ако сме се отдалечили от сектора
             const distToStart = getDistance(location.coords.latitude, location.coords.longitude, sector.startPoint.lat, sector.startPoint.lng);
-            const maxWarningDistance = Math.max(...warningDistances);
-            if (distToStart > maxWarningDistance + 500) {
-              // Почистваме всички предупреждения за този сектор
-              for (const distance of warningDistances) {
-                const warningKey = `warning-${sector.id}-${distance}`;
-                delete trackingState.lastNotificationTime[warningKey];
-              }
+            if (distToStart > WARNING_DISTANCE + 500) {
+              // Почистваме предупреждението за този сектор
+              delete trackingState.lastNotificationTime[warningKey];
             }
           }
         }

@@ -55,7 +55,8 @@ interface SectorActions {
   checkSectorExit: (location: Location, deviceId?: string) => Promise<void>;
   updateSectorSpeed: (speed: number) => void;
   updateSectorProgress: (location: Location) => void;
-  loadSectorRoutes: () => Promise<void>;
+  loadSectorRoutes: (maxRetries?: number) => Promise<void>;
+  reloadSectorRoutes: () => Promise<void>; // Force reload routes (clears cache)
   loadFromStorage: () => Promise<void>;
   addToHistory: (entry: SectorHistoryEntry) => void;
   saveViolationToDatabase: (entry: SectorHistoryEntry, location: Location, deviceId: string) => Promise<void>;
@@ -524,7 +525,7 @@ export const useSectorStore = create(
 
       updateSectorProgress: (location: Location) => {
         const state = get();
-        const { currentSector, sectorTotalDistance, lastNotificationThreshold } = state;
+        const { currentSector, sectorTotalDistance, lastNotificationThreshold, distanceTraveled } = state;
         
         if (!currentSector || sectorTotalDistance === 0) return;
         
@@ -563,6 +564,18 @@ export const useSectorStore = create(
               const [lng1, lat1] = sectorWithRoute.routeCoordinates[closestSegmentIndex];
               distanceFromStart += getDistance(lat1, lng1, location.latitude, location.longitude);
             }
+            
+            // When we just entered (distanceTraveled === 0), reset to start from beginning
+            // This ensures progress starts from 0% instead of potentially showing 100%
+            if (distanceTraveled === 0) {
+              // Reset to calculate from actual start point
+              distanceFromStart = getDistance(
+                currentSector.startPoint.lat,
+                currentSector.startPoint.lng,
+                location.latitude,
+                location.longitude
+              );
+            }
           } else {
             // Fallback to straight line distance from start
             distanceFromStart = getDistance(
@@ -573,7 +586,23 @@ export const useSectorStore = create(
             );
           }
           
-          const progress = Math.min(1, distanceFromStart / sectorTotalDistance);
+          // Calculate progress (0 to 1)
+          // When we just entered (distanceTraveled was 0), use distance from start point
+          // This ensures we start from 0% instead of potentially showing incorrect high percentage
+          let progress: number;
+          if (distanceTraveled === 0) {
+            // Just entered - calculate from actual start point distance only
+            const distanceFromStartPoint = getDistance(
+              currentSector.startPoint.lat,
+              currentSector.startPoint.lng,
+              location.latitude,
+              location.longitude
+            );
+            progress = Math.min(1, Math.max(0, distanceFromStartPoint / sectorTotalDistance));
+          } else {
+            // Already traveling - use calculated distance along route
+            progress = Math.min(1, Math.max(0, distanceFromStart / sectorTotalDistance));
+          }
           
           // Check if we've crossed the 50% notification threshold
           const threshold = 0.5;
@@ -619,84 +648,134 @@ export const useSectorStore = create(
           
           set({ 
             sectorProgress: progress,
-            distanceTraveled: distanceFromStart
+            distanceTraveled: distanceTraveled === 0 ? (progress * sectorTotalDistance) : distanceFromStart
           });
         } catch (error) {
           console.error('Error updating sector progress:', error);
         }
       },
 
-      loadSectorRoutes: async () => {
+      reloadSectorRoutes: async () => {
+        // Force reload by clearing cache first
+        const { clearRouteCache, clearRouteCacheForSector } = await import('@/utils/mapbox-directions');
+        clearRouteCache();
+        console.log('🔄 Force reloading sector routes (cache cleared)...');
+        
+        // Clear cache for sectors 27 and 28 (Цариградско шосе) since they were updated
+        clearRouteCacheForSector('27');
+        clearRouteCacheForSector('28');
+        
+        const actions = get() as SectorState & SectorActions;
+        return actions.loadSectorRoutes(3); // Start with fresh retries
+      },
+
+      loadSectorRoutes: async (maxRetries: number = 3) => {
         try {
-          console.log('Loading sector routes from Mapbox...');
+          console.log(`🔄 Loading sector routes from Mapbox... (attempt ${4 - maxRetries}/3)`);
           
           // Check if we have environment loaded
           const { ENV } = await import('@/utils/env');
           if (!ENV.mapboxToken || ENV.mapboxToken === '') {
-            console.warn('⚠️ Mapbox token not available, using fallback straight line routes');
-            const fallbackSectors = initialSectors.map(sector => ({
-              ...sector,
-              routeCoordinates: [
-                [sector.startPoint.lng, sector.startPoint.lat],
-                [sector.endPoint.lng, sector.endPoint.lat]
-              ]
-            } as SectorWithRoute));
-            set({ sectors: fallbackSectors });
+            console.error('❌ Mapbox token not available - cannot load routes');
+            // Keep sectors without routes - will retry when token is available
             return;
           }
           
-          // Use Promise.allSettled instead of Promise.all to continue even if some routes fail
-          const results = await Promise.allSettled(
-            initialSectors.map(async (sector) => {
-              try {
-                console.log(`Fetching route for sector ${sector.name}`);
-                const route = await fetchSectorRoute(sector);
-                
-                if (route && route.length > 0) {
-                  console.log(`✅ Got ${route.length} points for sector ${sector.name}`);
-                  return { ...sector, routeCoordinates: route } as SectorWithRoute;
-                } else {
-                  console.log(`⚠️ Failed to load route for ${sector.name}, using straight line`);
-                  return { 
-                    ...sector, 
-                    routeCoordinates: [
-                      [sector.startPoint.lng, sector.startPoint.lat],
-                      [sector.endPoint.lng, sector.endPoint.lat]
-                    ]
-                  } as SectorWithRoute;
-                }
-              } catch (error) {
-                console.error(`❌ Error loading route for ${sector.name}:`, error);
-                return { 
-                  ...sector, 
-                  routeCoordinates: [
-                    [sector.startPoint.lng, sector.startPoint.lat],
-                    [sector.endPoint.lng, sector.endPoint.lat]
-                  ]
-                } as SectorWithRoute;
+          // Helper function to fetch route with retry for a single sector
+          const fetchRouteWithRetry = async (sector: Sector, retriesLeft: number = 2): Promise<[number, number][] | null> => {
+            try {
+              const route = await fetchSectorRoute(sector);
+              if (route && route.length > 2) {
+                return route;
               }
-            })
-          );
-          
-          // Extract successful results
-          const loadedSectors = results.map((result, index) => {
-            if (result.status === 'fulfilled') {
-              return result.value;
-            } else {
-              console.error(`Failed to load sector ${initialSectors[index].name}:`, result.reason);
-              // Return sector with fallback straight line route
-              return {
-                ...initialSectors[index],
-                routeCoordinates: [
-                  [initialSectors[index].startPoint.lng, initialSectors[index].startPoint.lat],
-                  [initialSectors[index].endPoint.lng, initialSectors[index].endPoint.lat]
-                ]
-              } as SectorWithRoute;
+              
+              if (retriesLeft > 0) {
+                console.log(`⚠️ Retrying route for ${sector.name}... (${retriesLeft} retries left)`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * (3 - retriesLeft))); // Exponential backoff
+                return fetchRouteWithRetry(sector, retriesLeft - 1);
+              }
+              
+              return null;
+            } catch (error) {
+              if (retriesLeft > 0) {
+                console.log(`⚠️ Error fetching route for ${sector.name}, retrying... (${retriesLeft} retries left)`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * (3 - retriesLeft)));
+                return fetchRouteWithRetry(sector, retriesLeft - 1);
+              }
+              throw error;
             }
-          });
+          };
           
-          const successCount = results.filter(r => r.status === 'fulfilled').length;
+          // Load routes with retry logic - process sectors in batches to avoid overwhelming the API
+          const batchSize = 5;
+          const loadedSectors: SectorWithRoute[] = [];
+          
+          for (let i = 0; i < initialSectors.length; i += batchSize) {
+            const batch = initialSectors.slice(i, i + batchSize);
+            console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1} (${batch.length} sectors)...`);
+            
+            const batchResults = await Promise.allSettled(
+              batch.map(async (sector) => {
+                try {
+                  console.log(`🚗 Fetching route for sector ${sector.name}...`);
+                  console.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
+                  console.log(`📍 To: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
+                  
+                  const route = await fetchRouteWithRetry(sector);
+                  
+                  if (route && route.length > 2) {
+                    console.log(`✅ Got ${route.length} points for sector ${sector.name}`);
+                    return { ...sector, routeCoordinates: route } as SectorWithRoute;
+                  } else {
+                    console.error(`❌ Failed to load route for ${sector.name} after retries`);
+                    return { ...sector, routeCoordinates: undefined } as SectorWithRoute;
+                  }
+                } catch (error) {
+                  console.error(`❌ Error loading route for ${sector.name}:`, error);
+                  return { ...sector, routeCoordinates: undefined } as SectorWithRoute;
+                }
+              })
+            );
+            
+            // Add batch results to loaded sectors
+            batchResults.forEach((result, idx) => {
+              if (result.status === 'fulfilled') {
+                loadedSectors.push(result.value);
+              } else {
+                console.error(`❌ Promise rejected for sector ${batch[idx].name}:`, result.reason);
+                loadedSectors.push({
+                  ...batch[idx],
+                  routeCoordinates: undefined
+                } as SectorWithRoute);
+              }
+            });
+            
+            // Small delay between batches to avoid rate limiting
+            if (i + batchSize < initialSectors.length) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          
+          // Update state with loaded sectors
+          const successCount = loadedSectors.filter(s => s.routeCoordinates && s.routeCoordinates.length > 2).length;
+          const pendingCount = loadedSectors.length - successCount;
+          
           console.log(`✅ Loaded ${successCount}/${initialSectors.length} sector routes successfully`);
+          
+          if (pendingCount > 0 && maxRetries > 0) {
+            console.log(`⏳ ${pendingCount} sectors failed - retrying in 2 seconds...`);
+            // Retry failed sectors after a delay
+            setTimeout(() => {
+              const actions = get() as SectorState & SectorActions;
+              actions.loadSectorRoutes(maxRetries - 1).catch(err => {
+                console.error('❌ Retry failed:', err);
+              });
+            }, 2000);
+          } else if (pendingCount > 0) {
+            console.error(`❌ ${pendingCount} sectors failed to load routes after all retries`);
+          }
+          
+          // Always update state, even if some routes failed
           set({ sectors: loadedSectors });
           
           // Запазваме секторите с маршрути в AsyncStorage за background task
@@ -707,16 +786,14 @@ export const useSectorStore = create(
             console.error('Failed to save sectors with routes to AsyncStorage:', error);
           }
         } catch (error) {
-          console.error('Error loading sector routes:', error);
-          // Fallback to sectors without routes but with straight line coordinates
-          const fallbackSectors = initialSectors.map(sector => ({
+          console.error('❌ Error loading sector routes:', error);
+          // Don't create fallback - leave sectors without routeCoordinates so they can be loaded later
+          const sectorsWithoutRoutes = initialSectors.map(sector => ({
             ...sector,
-            routeCoordinates: [
-              [sector.startPoint.lng, sector.startPoint.lat],
-              [sector.endPoint.lng, sector.endPoint.lat]
-            ]
+            routeCoordinates: undefined
           } as SectorWithRoute));
-          set({ sectors: fallbackSectors });
+          set({ sectors: sectorsWithoutRoutes });
+          console.log('⏳ Sectors initialized without routes - will load routes on next attempt');
         }
       },
 

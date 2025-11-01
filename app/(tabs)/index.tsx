@@ -62,7 +62,14 @@ export default function HomeScreen() {
   }, [updateSpeed, updateSectorSpeed, updateSectorProgress, currentSector, checkSectorEntry, checkSectorExit, deviceId]);
 
   useEffect(() => {
-    loadSectorRoutes();
+    // Load routes on mount and reload periodically to ensure they're loaded
+    loadSectorRoutes().catch(err => {
+      console.error('Failed to load sector routes:', err);
+      // Retry after 5 seconds if failed
+      setTimeout(() => {
+        loadSectorRoutes().catch(console.error);
+      }, 5000);
+    });
   }, [loadSectorRoutes]);
 
   useEffect(() => {

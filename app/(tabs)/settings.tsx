@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bell, Vibrate, MapPin, Smartphone, Info, Navigation, AlertTriangle, Ruler, Wifi, Battery, Download, User, LogOut } from 'lucide-react-native';
+import { Bell, Vibrate, MapPin, Smartphone, Info, Navigation, AlertTriangle, Wifi, Battery, Download, User, LogOut } from 'lucide-react-native';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useOfflineStore } from '@/stores/offline-store';
 import { useBatteryOptimization } from '@/stores/battery-optimization';
@@ -38,13 +38,11 @@ export default function SettingsScreen() {
     backgroundTrackingEnabled,
     backgroundTrackingActive,
     earlyWarningEnabled,
-    warningDistances,
     toggleNotifications,
     toggleVibration,
     toggleSound,
     toggleBackgroundTracking,
     toggleEarlyWarning,
-    toggleWarningDistance,
   } = useSettingsStore();
   const insets = useSafeAreaInsets();
 
@@ -211,36 +209,6 @@ export default function SettingsScreen() {
               onToggle={toggleEarlyWarning}
             />
 
-            {earlyWarningEnabled && (
-              <View style={styles.distanceSelector}>
-                <View style={styles.distanceHeader}>
-                  <Ruler color="#00ff88" size={16} />
-                  <Text style={styles.distanceTitle}>Разстояния за предупреждение</Text>
-                </View>
-                <View style={styles.distanceOptions}>
-                  {[1000, 2000, 3000].map((distance) => (
-                    <TouchableOpacity
-                      key={distance}
-                      style={[
-                        styles.distanceOption,
-                        warningDistances.includes(distance) && styles.distanceOptionActive
-                      ]}
-                      onPress={() => toggleWarningDistance(distance)}
-                    >
-                      <Text style={[
-                        styles.distanceOptionText,
-                        warningDistances.includes(distance) && styles.distanceOptionTextActive
-                      ]}>
-                        {distance / 1000}км
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <Text style={styles.distanceDescription}>
-                  Ще получавате предупреждения на: {warningDistances.map(d => `${d/1000}км`).join(', ')} преди сектор
-                </Text>
-              </View>
-            )}
           </View>
 
           <View style={styles.section}>
@@ -529,57 +497,6 @@ const styles = StyleSheet.create({
   boldText: {
     fontWeight: '600',
     color: '#fff',
-  },
-  distanceSelector: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  distanceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  distanceTitle: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  distanceOptions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  distanceOption: {
-    flex: 1,
-    backgroundColor: '#333',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    marginHorizontal: 4,
-    alignItems: 'center',
-  },
-  distanceOptionActive: {
-    backgroundColor: '#00ff88',
-  },
-  distanceOptionText: {
-    color: '#ccc',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  distanceOptionTextActive: {
-    color: '#000',
-    fontWeight: '600',
-  },
-  distanceDescription: {
-    color: '#888',
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 16,
   },
   batteryInfo: {
     backgroundColor: '#1a1a1a',

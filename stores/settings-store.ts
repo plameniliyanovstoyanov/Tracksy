@@ -11,7 +11,6 @@ interface SettingsState {
   soundEnabled: boolean;
   backgroundTrackingEnabled: boolean;
   backgroundTrackingActive: boolean;
-  warningDistances: number[]; // множество разстояния в метри
   earlyWarningEnabled: boolean;
 }
 
@@ -21,7 +20,6 @@ interface SettingsActions {
   toggleSound: () => void;
   toggleBackgroundTracking: () => Promise<void>;
   toggleEarlyWarning: () => void;
-  toggleWarningDistance: (distance: number) => void;
   startBackgroundTracking: () => Promise<boolean>;
   stopBackgroundTracking: () => Promise<void>;
   checkBackgroundTrackingStatus: () => Promise<void>;
@@ -39,7 +37,6 @@ export const useSettingsStore = create(
       soundEnabled: true,
       backgroundTrackingEnabled: false,
       backgroundTrackingActive: false,
-      warningDistances: [1000, 2000, 3000], // 1км, 2км, 3км по подразбиране
       earlyWarningEnabled: true,
     } as SettingsState,
     (set, get) => ({
@@ -68,28 +65,6 @@ export const useSettingsStore = create(
 
       toggleEarlyWarning: () => {
         set({ earlyWarningEnabled: !get().earlyWarningEnabled });
-        const actions = get() as SettingsState & SettingsActions;
-        actions.saveToStorage();
-      },
-
-      toggleWarningDistance: (distance: number) => {
-        const currentDistances = get().warningDistances;
-        let newDistances: number[];
-        
-        if (currentDistances.includes(distance)) {
-          // Премахваме разстоянието ако вече е избрано
-          newDistances = currentDistances.filter(d => d !== distance);
-        } else {
-          // Добавяме разстоянието и сортираме
-          newDistances = [...currentDistances, distance].sort((a, b) => a - b);
-        }
-        
-        // Уверяваме се, че има поне едно избрано разстояние
-        if (newDistances.length === 0) {
-          newDistances = [1000]; // По подразбиране 1км
-        }
-        
-        set({ warningDistances: newDistances });
         const actions = get() as SettingsState & SettingsActions;
         actions.saveToStorage();
       },
@@ -179,7 +154,6 @@ export const useSettingsStore = create(
               soundEnabled: parsed.soundEnabled ?? true,
               backgroundTrackingEnabled: parsed.backgroundTrackingEnabled ?? false,
               backgroundTrackingActive: false, // Will be checked separately
-              warningDistances: parsed.warningDistances ?? [1000, 2000, 3000],
               earlyWarningEnabled: parsed.earlyWarningEnabled ?? true,
             });
             
@@ -202,7 +176,6 @@ export const useSettingsStore = create(
             vibrationEnabled: state.vibrationEnabled,
             soundEnabled: state.soundEnabled,
             backgroundTrackingEnabled: state.backgroundTrackingEnabled,
-            warningDistances: state.warningDistances,
             earlyWarningEnabled: state.earlyWarningEnabled,
           };
           await AsyncStorage.setItem('app-settings', JSON.stringify(dataToSave));

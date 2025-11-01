@@ -7,6 +7,30 @@ const routeCache = new Map<string, [number, number][]>();
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const cacheTimestamps = new Map<string, number>();
 
+// Function to clear route cache (useful when coordinates change)
+export function clearRouteCache() {
+  console.log('🗑️ Clearing route cache...');
+  routeCache.clear();
+  cacheTimestamps.clear();
+  console.log('✅ Route cache cleared');
+}
+
+// Function to clear cache for a specific sector
+export function clearRouteCacheForSector(sectorId: string) {
+  console.log(`🗑️ Clearing route cache for sector ${sectorId}...`);
+  const keysToDelete: string[] = [];
+  routeCache.forEach((_, key) => {
+    if (key.startsWith(`${sectorId}_`)) {
+      keysToDelete.push(key);
+    }
+  });
+  keysToDelete.forEach(key => {
+    routeCache.delete(key);
+    cacheTimestamps.delete(key);
+  });
+  console.log(`✅ Cleared ${keysToDelete.length} cached routes for sector ${sectorId}`);
+}
+
 export interface RouteCoordinate {
   latitude: number;
   longitude: number;
@@ -91,13 +115,13 @@ export async function fetchSectorRoute(sector: Sector): Promise<[number, number]
         console.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
         console.log(`📍 To: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
         
-        // Use fetch with 5 second timeout to prevent hanging
+        // Use fetch with 10 second timeout to give more time for route calculation
         const response = await fetchWithTimeout(url, {
           method: 'GET',
           headers: {
             'Accept': 'application/json',
           },
-        }, 5000);
+        }, 10000);
         
         console.log(`📡 Response status for ${profile}: ${response.status}`);
         

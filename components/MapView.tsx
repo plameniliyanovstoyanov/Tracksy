@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Navigation, MapPin } from 'lucide-react-native';
 import * as Location from 'expo-location';
@@ -23,32 +23,39 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
   // Get sector data from store
   const { sectors: storeSectors } = useSectorStore();
 
-  // Convert store sectors to routes format
-  const sectorRoutes = React.useMemo(() => {
+  // Convert store sectors to routes format - ONLY include sectors with valid routes (3+ points)
+  // We don't show fallback straight lines anymore to avoid showing incorrect routes
+  const sectorRoutes = useMemo(() => {
     const routes: Record<string, [number, number][]> = {};
     
     storeSectors.forEach(sector => {
-      if (sector.routeCoordinates && sector.routeCoordinates.length > 0) {
+      // Only include routes that have valid curved paths (3+ points)
+      // Skip fallback straight lines (2 points) - we'll wait for real routes to load
+      if (sector.routeCoordinates && sector.routeCoordinates.length > 2) {
         routes[sector.id] = sector.routeCoordinates;
-        console.log(`✅ Using store route for ${sector.name}: ${sector.routeCoordinates.length} points`);
-      } else {
-        // Fallback to straight line
-        routes[sector.id] = [
-          [sector.startPoint.lng, sector.startPoint.lat],
-          [sector.endPoint.lng, sector.endPoint.lat]
-        ];
-        console.log(`⚠️ Using straight line fallback for ${sector.name}`);
       }
     });
     
     return routes;
   }, [storeSectors]);
   
-  const routesLoaded = storeSectors.length > 0;
 
+  // Throttled location update ref
+  const locationUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   // Update location on the map and handle automatic centering
   useEffect(() => {
-    if (location && webViewRef.current && mapReady) {
+    if (!location || !webViewRef.current || !mapReady) return;
+    
+    // Clear existing timeout
+    if (locationUpdateTimeoutRef.current) {
+      clearTimeout(locationUpdateTimeoutRef.current);
+    }
+    
+    // Throttle location updates with 250ms delay
+    locationUpdateTimeoutRef.current = setTimeout(() => {
+      if (!webViewRef.current || !location) return;
+      
       const currentTime = Date.now();
       let shouldCenter = !hasInitiallyFocused;
       
@@ -69,7 +76,6 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         if (shouldAutoCenter) {
           shouldCenter = true;
           setLastCenterTime(currentTime);
-          console.log('🚗 Auto-centering map - user is moving:', distance.toFixed(0), 'meters');
         }
       }
       
@@ -84,17 +90,22 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
       if (!hasInitiallyFocused) {
         setHasInitiallyFocused(true);
         setLastCenterTime(currentTime);
-        console.log('🎯 Centering map on user location for the first time');
       }
       
       setPreviousLocation(location);
-    }
+    }, 250);
+    
+    // Cleanup timeout on unmount or dependency change
+    return () => {
+      if (locationUpdateTimeoutRef.current) {
+        clearTimeout(locationUpdateTimeoutRef.current);
+      }
+    };
   }, [location, hasInitiallyFocused, previousLocation, lastCenterTime, isFollowingUser, mapReady]);
 
   // Force center on user location when both map and location are ready
   useEffect(() => {
     if (location && mapReady && webViewRef.current && !hasInitiallyFocused) {
-      console.log('🎯 Force centering map on user location at app startup');
       const centerScript = `
         if (window.updateUserLocation) {
           window.updateUserLocation(${location.coords.longitude}, ${location.coords.latitude}, true, true);
@@ -107,62 +118,55 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
     }
   }, [location, mapReady, hasInitiallyFocused]);
 
+  // Debounced function to send routes to WebView
+  const sendRoutesToWebDebouncedRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendRoutesToWeb = useCallback(() => {
+    if (!webViewRef.current || !mapReady) return;
+    
+    // Clear existing timeout
+    if (sendRoutesToWebDebouncedRef.current) {
+      clearTimeout(sendRoutesToWebDebouncedRef.current);
+    }
+    
+    // Debounce with 150ms delay
+    sendRoutesToWebDebouncedRef.current = setTimeout(() => {
+      if (!webViewRef.current) return;
+      
+      // Always send snapshot, even if empty - this clears old routes/markers
+      const routeKeys = Object.keys(sectorRoutes);
+      const filteredRoutes: Record<string, [number, number][]> = {};
+      routeKeys.forEach(key => {
+        filteredRoutes[key] = sectorRoutes[key];
+      });
+      
+      const updateScript = `
+        if (window.updateSectorRoutes) {
+          try {
+            window.updateSectorRoutes(${JSON.stringify(filteredRoutes)}, ${JSON.stringify(storeSectors)});
+            window.addSectorMarkers(${JSON.stringify(storeSectors)}, ${JSON.stringify(filteredRoutes)});
+          } catch (error) {
+            // Error updating routes
+          }
+        }
+        true;
+      `;
+      webViewRef.current.injectJavaScript(updateScript);
+    }, 150);
+  }, [mapReady, sectorRoutes, storeSectors]);
+
   // Update routes after map loads
   useEffect(() => {
-    console.log('🔄 Routes effect triggered:', { 
-      routesLoaded, 
-      routesCount: Object.keys(sectorRoutes).length, 
-      mapReady, 
-      hasWebView: !!webViewRef.current 
-    });
+    if (!mapReady || !webViewRef.current) return;
     
-    if (routesLoaded && Object.keys(sectorRoutes).length > 0 && webViewRef.current && mapReady) {
-      // Wait for the map to be fully loaded
-      const timer = setTimeout(() => {
-        const validRoutes = Object.keys(sectorRoutes).filter(key => 
-          sectorRoutes[key] && sectorRoutes[key].length > 2
-        );
-        
-        console.log(`🎯 Injecting ${validRoutes.length} valid sector routes into map...`);
-        console.log('📊 Route details:', validRoutes.map(key => ({
-          id: key,
-          points: sectorRoutes[key].length,
-          firstPoint: sectorRoutes[key][0],
-          lastPoint: sectorRoutes[key][sectorRoutes[key].length - 1]
-        })));
-        
-        const updateScript = `
-          console.log('📱 Received ${validRoutes.length} valid routes from React Native');
-          console.log('📊 Routes data:', ${JSON.stringify(sectorRoutes)});
-          console.log('📊 Sectors data:', ${JSON.stringify(storeSectors)});
-          
-          if (window.updateSectorRoutes) {
-            console.log('✅ updateSectorRoutes function found, calling it...');
-            window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
-            window.addSectorMarkers(${JSON.stringify(storeSectors)}, ${JSON.stringify(sectorRoutes)});
-            console.log('✅ Sector routes and markers updated successfully');
-          } else {
-            console.log('❌ updateSectorRoutes function not available yet, retrying...');
-            // Retry after a short delay
-            setTimeout(() => {
-              if (window.updateSectorRoutes) {
-                console.log('✅ updateSectorRoutes function found on retry, calling it...');
-                window.updateSectorRoutes(${JSON.stringify(sectorRoutes)});
-                window.addSectorMarkers(${JSON.stringify(storeSectors)}, ${JSON.stringify(sectorRoutes)});
-                console.log('✅ Sector routes and markers updated successfully on retry');
-              } else {
-                console.log('❌ updateSectorRoutes function still not available after retry');
-              }
-            }, 1000);
-          }
-          true;
-        `;
-        webViewRef.current?.injectJavaScript(updateScript);
-      }, 2000); // Increased wait time to ensure map is fully ready
-      
-      return () => clearTimeout(timer);
-    }
-  }, [routesLoaded, sectorRoutes, mapReady, storeSectors]);
+    sendRoutesToWeb();
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (sendRoutesToWebDebouncedRef.current) {
+        clearTimeout(sendRoutesToWebDebouncedRef.current);
+      }
+    };
+  }, [mapReady, sectorRoutes, sendRoutesToWeb]);
 
   // Function to calculate distance between two coordinates
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -183,7 +187,6 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
   // Function to center map on user location
   const centerOnUserLocation = () => {
     if (location && webViewRef.current) {
-      console.log('🎯 Manually centering map on user location');
       setLastCenterTime(Date.now()); // Reset auto-center timer
       setIsFollowingUser(true); // Re-enable following
       const centerScript = `
@@ -199,7 +202,6 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
   // Function to toggle user following mode
   const toggleFollowMode = () => {
     setIsFollowingUser(!isFollowingUser);
-    console.log('📍 User following mode:', !isFollowingUser ? 'enabled' : 'disabled');
   };
 
   const mapHTML = `
@@ -310,96 +312,97 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         map.on('zoomstart', () => handleUserInteraction('zoomstart'));
 
         // Function to update sector routes
-        window.updateSectorRoutes = function(routes) {
-          console.log('🗺️ Updating sector routes on map:', Object.keys(routes));
-          console.log('🗺️ Routes received:', routes);
-          
-          if (map.getSource('sectors')) {
-            const sectorsData = ${JSON.stringify(storeSectors)};
-            console.log('🗺️ Sectors data:', sectorsData);
-            
-            const features = sectorsData.map(sector => {
-              const coordinates = routes[sector.id];
-              console.log('📍 Sector ' + sector.name + ': ' + (coordinates ? coordinates.length : 0) + ' coordinates');
-              
-              if (!coordinates || !Array.isArray(coordinates) || coordinates.length < 2) {
-                console.log('⚠️ No coordinates for ' + sector.name + ', skipping');
-                return null;
-              }
-              
-              const validCoordinates = coordinates.filter(coord => 
-                Array.isArray(coord) && 
-                coord.length === 2 && 
-                typeof coord[0] === 'number' && 
-                typeof coord[1] === 'number' &&
-                !isNaN(coord[0]) && !isNaN(coord[1])
-              );
-              
-              if (validCoordinates.length < 2) {
-                console.log('⚠️ Not enough valid coordinates for ' + sector.name);
-                return null;
-              }
-              
-              console.log('✅ Using ' + validCoordinates.length + ' coordinates for ' + sector.name);
-              
-              return {
-                'type': 'Feature',
-                'properties': {
-                  'name': sector.name,
-                  'route': sector.route,
-                  'speedLimit': sector.speedLimit,
-                  'distance': sector.distance,
-                  'startKm': sector.startPoint.km || 0,
-                  'endKm': sector.endPoint.km || 0
-                },
-                'geometry': {
-                  'type': 'LineString',
-                  'coordinates': validCoordinates
-                }
-              };
-            }).filter(feature => feature !== null); // Remove null features
-            
-            console.log('🎯 Updating map with ' + features.length + ' sector features');
-            console.log('🎯 Features details:', features.map(f => ({
-              name: f.properties.name,
-              coordinates: f.geometry.coordinates.length,
-              firstCoord: f.geometry.coordinates[0],
-              lastCoord: f.geometry.coordinates[f.geometry.coordinates.length - 1]
-            })));
-            
-            const geojsonData = {
-              'type': 'FeatureCollection',
-              'features': features
-            };
-            
-            console.log('🎯 Setting GeoJSON data:', geojsonData);
-            
-            map.getSource('sectors').setData(geojsonData);
-            
-            console.log('✅ Sector routes updated on map successfully');
-            console.log('✅ Map source sectors data:', map.getSource('sectors').serialize());
-          } else {
-            console.log('❌ Map source "sectors" not found');
+        window.updateSectorRoutes = function(routes, sectorsData) {
+          if (!map.getSource('sectors')) {
+            return;
           }
+          
+          const features = sectorsData.map(sector => {
+            const coordinates = routes[sector.id];
+            
+            if (!coordinates) {
+              return null;
+            }
+            
+            if (!Array.isArray(coordinates)) {
+              return null;
+            }
+            
+            if (coordinates.length < 2) {
+              return null;
+            }
+              
+            const validCoordinates = coordinates.filter(coord => 
+              Array.isArray(coord) && 
+              coord.length === 2 && 
+              typeof coord[0] === 'number' && 
+              typeof coord[1] === 'number' &&
+              !isNaN(coord[0]) && !isNaN(coord[1])
+            );
+              
+            if (validCoordinates.length < 2) {
+              return null;
+            }
+              
+            // Add direction property based on sector ID to help separate overlapping routes
+            const isDirection1 = parseInt(sector.id) % 2 === 0 || sector.name.includes('посока 1');
+            
+            return {
+              'type': 'Feature',
+              'id': sector.id,
+              'properties': {
+                'name': sector.name,
+                'route': sector.route,
+                'speedLimit': sector.speedLimit,
+                'distance': sector.distance,
+                'startKm': sector.startPoint.km || 0,
+                'endKm': sector.endPoint.km || 0,
+                'direction': isDirection1 ? 'dir1' : 'dir2'  // Helper property for offset
+              },
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': validCoordinates
+              }
+            };
+          }).filter(feature => feature !== null); // Remove null features
+          
+          const geojsonData = {
+            'type': 'FeatureCollection',
+            'features': features.length > 0 ? features : []
+          };
+          
+          map.getSource('sectors').setData(geojsonData);
+        };
+        
+        // Registry to track markers and prevent duplicates
+        const markersBySectorId = {};
+        
+        // Helper to create marker element
+        const createMarkerEl = (color) => {
+          const el = document.createElement('div');
+          el.style.width = '12px';
+          el.style.height = '12px';
+          el.style.borderRadius = '50%';
+          el.style.backgroundColor = color;
+          el.style.border = '2px solid white';
+          return el;
         };
         
         // Function to add markers for all sectors
         window.addSectorMarkers = function(sectorsData, routes) {
-          console.log('🏷️ Adding markers for all sectors');
+          // Remove old markers
+          Object.values(markersBySectorId).forEach(m => {
+            if (m.start) m.start.remove();
+            if (m.end) m.end.remove();
+          });
+          Object.keys(markersBySectorId).forEach(k => delete markersBySectorId[k]);
           
           sectorsData.forEach(sector => {
             const coordinates = routes[sector.id];
             
             if (coordinates && Array.isArray(coordinates) && coordinates.length >= 2) {
               // Start marker
-              const startEl = document.createElement('div');
-              startEl.style.width = '12px';
-              startEl.style.height = '12px';
-              startEl.style.borderRadius = '50%';
-              startEl.style.backgroundColor = '#ffaa00';
-              startEl.style.border = '2px solid white';
-              
-              new mapboxgl.Marker(startEl)
+              const startMarker = new mapboxgl.Marker(createMarkerEl('#ffaa00'))
                 .setLngLat([sector.startPoint.lng, sector.startPoint.lat])
                 .setPopup(new mapboxgl.Popup({ offset: 25 })
                   .setHTML('<div><strong>Начало: ' + sector.startPoint.name + '</strong><br>' + 
@@ -408,14 +411,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
                 .addTo(map);
               
               // End marker
-              const endEl = document.createElement('div');
-              endEl.style.width = '12px';
-              endEl.style.height = '12px';
-              endEl.style.borderRadius = '50%';
-              endEl.style.backgroundColor = '#ff6600';
-              endEl.style.border = '2px solid white';
-              
-              new mapboxgl.Marker(endEl)
+              const endMarker = new mapboxgl.Marker(createMarkerEl('#ff6600'))
                 .setLngLat([sector.endPoint.lng, sector.endPoint.lat])
                 .setPopup(new mapboxgl.Popup({ offset: 25 })
                   .setHTML('<div><strong>Край: ' + sector.endPoint.name + '</strong><br>' + 
@@ -423,43 +419,40 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
                          (sector.endPoint.km ? 'км ' + sector.endPoint.km : '') + '</div>'))
                 .addTo(map);
               
-              console.log('✅ Added markers for ' + sector.name);
-            } else {
-              console.log('⚠️ No coordinates for ' + sector.name + ', skipping markers');
+              markersBySectorId[sector.id] = { start: startMarker, end: endMarker };
             }
           });
         };
 
         map.on('load', () => {
-          console.log('🗺️ Map loaded, initializing sectors...');
-          // Notify React Native that map is ready
-          window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'mapReady' }));
-          // Add sectors data
-          const sectorsData = ${JSON.stringify(storeSectors)};
-          console.log('🗺️ Initializing with sectors data:', sectorsData);
-          
           // Start with empty features - routes will be added when they load
           const initialFeatures = [];
-          console.log('🗺️ Starting with empty features:', initialFeatures);
           
-          // Add source for sector lines with initial straight lines
+          // Add source for sector lines with promoteId for stable feature IDs
           map.addSource('sectors', {
             'type': 'geojson',
+            'promoteId': 'id',
             'data': {
               'type': 'FeatureCollection',
               'features': initialFeatures
             }
           });
-          console.log('🗺️ Added sectors source to map');
 
-          // Add layer for sector lines
+          // Add layer for sector lines with offset to separate overlapping routes
           map.addLayer({
             'id': 'sectors-line',
             'type': 'line',
             'source': 'sectors',
             'layout': {
               'line-join': 'round',
-              'line-cap': 'round'
+              'line-cap': 'round',
+              'line-offset': [
+                // Offset lines based on direction to separate overlapping routes
+                // For sectors with same start/end points but different directions
+                'case',
+                ['==', ['get', 'direction'], 'dir1'], 3,  // Direction 1: +3px offset (right side)
+                -3  // Direction 2: -3px offset (left side)
+              ]
             },
             'paint': {
               'line-color': [
@@ -474,6 +467,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
                 ['==', ['get', 'route'], 'Път I-4'], '#ffeaa7',
                 ['==', ['get', 'route'], 'Бул. България'], '#ff9ff3',
                 ['==', ['get', 'route'], 'Бул. Европа'], '#ff6b9d',
+                ['==', ['get', 'route'], 'Цариградско шосе'], '#ffaa00',
                 ['==', ['get', 'route'], 'Тест'], '#00ff88',
                 '#ffaa00'
               ],
@@ -481,7 +475,6 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
               'line-opacity': 0.8
             }
           });
-          console.log('🗺️ Added sectors-line layer to map');
 
           // Add start and end markers only for sectors that will have routes
           // Markers will be added when routes are loaded to avoid showing markers for sectors without routes
@@ -509,7 +502,8 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
             map.getCanvas().style.cursor = '';
           });
           
-          console.log('✅ Map initialization complete with ' + initialFeatures.length + ' sectors');
+          // Send mapReady message only after source/layer are guaranteed to exist
+          window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'mapReady' }));
         });
       </script>
     </body>
@@ -533,26 +527,24 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
           startInLoadingState={true}
           originWhitelist={['*']}
           mixedContentMode="compatibility"
-          onLoadEnd={() => {
-            console.log('🌐 WebView loaded');
-            // Give the map a moment to fully initialize
-            setTimeout(() => {
-              setMapReady(true);
-              console.log('🗺️ Map is ready for location updates');
-            }, 1000);
-          }}
           onMessage={(event) => {
             try {
               const data = JSON.parse(event.nativeEvent.data);
+              if (data.type === 'mapReady') {
+                setMapReady(true);
+                // Send full snapshot immediately when map is ready (handles WebView reload)
+                sendRoutesToWeb();
+                // Reset initial focus to enable auto-center on reload if needed
+                setHasInitiallyFocused(false);
+                return;
+              }
               if (data.type === 'userInteraction') {
-                console.log('👆 User interacted with map:', data.action);
                 setIsFollowingUser(false); // Disable following when user interacts
               } else if (data.type === 'reEnableFollowing') {
-                console.log('🔄 Re-enabling following mode after user interaction timeout');
                 setIsFollowingUser(true); // Re-enable following after timeout
               }
             } catch (error) {
-              console.log('Error parsing WebView message:', error);
+              // Error parsing message
             }
           }}
         />
