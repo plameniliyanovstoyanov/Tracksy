@@ -7,7 +7,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sectors } from '@/data/sectors';
 
 const LOCATION_TASK_NAME = 'background-location-task';
-const BACKGROUND_NOTIFICATION_ID = 'background-tracking';
 
 interface LocationData {
   latitude: number;
@@ -210,33 +209,35 @@ function calculateRemainingDistance(currentPos: { latitude: number; longitude: n
   return remainingDistance;
 }
 
-// Изчисляване на препоръчителна скорост
+// Изчисляване на препоръчителна скорост за компенсация
 function calculateRecommendedSpeed(
   currentAvgSpeed: number,
   remainingDistance: number,
-  speedLimit: number
+  speedLimit: number,
+  timeInSectorSec?: number
 ): number | null {
-  if (remainingDistance <= 0) return null;
+  if (remainingDistance <= 0 || !timeInSectorSec || timeInSectorSec <= 0) return null;
   
   // Ако средната скорост е под лимита, можем да карам с лимита
   if (currentAvgSpeed <= speedLimit) {
     return Math.min(speedLimit, currentAvgSpeed + 10);
   }
   
-  // Ако сме превишили, изчисляваме колко бавно трябва да караме
-  // за да компенсираме превишението
-  const timeAtLimit = remainingDistance / (speedLimit / 3.6); // време в секунди при лимита
-  // const currentTime = remainingDistance / (currentAvgSpeed / 3.6); // текущо очаквано време
+  // Изчисляваме изминато разстояние
+  const distanceSoFar = (currentAvgSpeed / 3.6) * timeInSectorSec; // метри
+  const limit = speedLimit; // km/h
   
-  // Изчисляваме необходимата скорост за компенсация
-  const requiredSpeed = (remainingDistance / timeAtLimit) * 3.6;
+  // Търсим x така, че комбинирана средна ≤ limit:
+  // (v_avg*d_s + x*d_r) / (d_s + d_r) ≤ limit
+  // => x ≤ (limit*(d_s + d_r) - v_avg*d_s) / d_r
+  const x = ((limit * (distanceSoFar + remainingDistance)) - (currentAvgSpeed * distanceSoFar)) / remainingDistance;
   
-  // Ако е отрицателна или много ниска, значи сме превишили твърде много
-  if (requiredSpeed < 20) {
+  // x е в km/h; ограничаваме разумно
+  if (x < 0) {
     return -1; // Индикация че трябва да спрем или караме много бавно
   }
   
-  return Math.max(20, Math.min(requiredSpeed, speedLimit - 5));
+  return Math.max(20, Math.min(x, speedLimit - 5));
 }
 
 // Състояние за проследяване на потвърждения
@@ -247,6 +248,7 @@ interface SectorTrackingState {
   currentSectorId: string | null;
   lastNotificationTime: { [key: string]: number };
   warnedSectors: string[];
+  hasNotifiedAverageSpeedExceeded: { [sectorId: string]: boolean }; // Флаг за да не дублираме нотификации за средна скорост
 }
 
 // Background task definition
@@ -278,7 +280,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         // Запазваме последното местоположение
         await AsyncStorage.setItem('last-location', JSON.stringify(locationData));
 
-        // Зареждаме състоянието за проследяване
+        // Зареждаме състоянието за проследяване (кешираме за намаляване на I/O)
         const trackingStateStr = await AsyncStorage.getItem('sector-tracking-state');
         let trackingState: SectorTrackingState = trackingStateStr ? JSON.parse(trackingStateStr) : {
           lastCheckTime: 0,
@@ -286,25 +288,36 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           exitConfirmations: 0,
           currentSectorId: null,
           lastNotificationTime: {},
-          warnedSectors: []
+          warnedSectors: [],
+          hasNotifiedAverageSpeedExceeded: {}
         };
         
-        // Намален дебаунсинг за максимална точност
+        // Инициализираме флага ако липсва (backward compatibility)
+        if (!trackingState.hasNotifiedAverageSpeedExceeded) {
+          trackingState.hasNotifiedAverageSpeedExceeded = {};
+        }
+        
+        // Дебаунсинг - балансирано за battery
         const now = Date.now();
-        if (now - trackingState.lastCheckTime < 250) { // Минимум 0.25 секунди между проверките за максимална точност
+        if (now - trackingState.lastCheckTime < 700) { // 700ms между проверките
           return;
         }
         trackingState.lastCheckTime = now;
         
-        // Проверяваме за влизане в сектори
+        // Кешираме настройките и данните за сектор за да намалим I/O
         const currentSectorStr = await AsyncStorage.getItem('current-sector');
         let currentSector: SectorCheck | null = currentSectorStr ? JSON.parse(currentSectorStr) : null;
 
-        // Проверяваме настройките за ранни предупреждения
         const settingsStr = await AsyncStorage.getItem('app-settings');
         const settings = settingsStr ? JSON.parse(settingsStr) : { 
-          earlyWarningEnabled: true
+          earlyWarningEnabled: true,
+          notificationsEnabled: true,
+          vibrationEnabled: true,
+          soundEnabled: true
         };
+        
+        // Запазваме trackingState само накрая (веднъж), не на всяка стъпка
+        let shouldSaveTrackingState = false;
         
         // Проверяваме за предупреждения преди влизане в сектор (само ако е включено и не сме вече в сектор)
         if (settings.earlyWarningEnabled && !trackingState.currentSectorId) {
@@ -313,6 +326,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           for (const sector of sectors) {
             if (!sector.active) continue;
             
+            // Използваме реалния маршрут ако е наличен
+            const sectorAny = sector as unknown as { routeCoordinates?: [number, number][] };
             const sectorCheck: SectorCheck = {
               id: sector.id,
               name: sector.name,
@@ -320,7 +335,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               startPoint: sector.startPoint,
               endPoint: sector.endPoint,
               active: sector.active,
-              route: []
+              routeCoordinates: sectorAny.routeCoordinates,
+              route: sectorAny.routeCoordinates ? sectorAny.routeCoordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })) : []
             };
             
             const warningKey = `warning-${sector.id}`;
@@ -355,8 +371,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                       sectorName: sector.name,
                       distance: actualDistance
                     },
-                    sound: settings.soundEnabled ?? true,
-                    priority: 'high',
+                    sound: settings.soundEnabled ? 'default' : false,
+                    vibrate: settings.vibrationEnabled ? [0, 300, 200, 300] : undefined,
+                    ...(Platform.OS === 'android' && {
+                      priority: Notifications.AndroidNotificationPriority.MAX,
+                      channelId: 'tracksy-alerts',
+                    }),
+                    ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
                   },
                   trigger: null,
                 });
@@ -455,8 +476,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                   }
                 }
                 
-                // Изпращаме известие само ако е включено
-                if (settings.notificationsEnabled) {
+                // Изпращаме известие само ако е включено и не сме изпратили такова за този сектор в последните 5 секунди
+                const exitNotificationKey = `exit-${exitingSector.id}`;
+                const lastExitNotificationTime = trackingState.lastNotificationTime[exitNotificationKey] || 0;
+                const NOTIFICATION_DEBOUNCE_MS = 5000;
+                const shouldSendExitNotification = now - lastExitNotificationTime >= NOTIFICATION_DEBOUNCE_MS;
+                
+                if (settings.notificationsEnabled && shouldSendExitNotification) {
                   await Notifications.scheduleNotificationAsync({
                     content: {
                       title: `✅ Край на сектор`,
@@ -467,12 +493,19 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                         averageSpeed: avgSpeed,
                         speedLimit: exitingSector.speedLimit
                       },
-                      sound: settings.soundEnabled ?? true,
-                      vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
-                      priority: 'high',
-                    },
+                  sound: settings.soundEnabled ? 'default' : false,
+                  vibrate: settings.vibrationEnabled ? [0, 300, 200, 300] : undefined,
+                  ...(Platform.OS === 'android' && {
+                    priority: Notifications.AndroidNotificationPriority.MAX,
+                    channelId: 'tracksy-alerts',
+                  }),
+                  ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
+                },
                     trigger: null,
                   });
+                  
+                  // Запазваме времето за debounce
+                  trackingState.lastNotificationTime[exitNotificationKey] = now;
                 }
 
                 console.log(`Exited sector ${exitingSector.name} with avg speed ${avgSpeed.toFixed(1)} km/h`);
@@ -538,9 +571,15 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               await AsyncStorage.removeItem('sector-speed-readings');
               await AsyncStorage.removeItem('sector-monitor-data');
               
+              const prevId = trackingState.currentSectorId;
               trackingState.currentSectorId = null;
               trackingState.exitConfirmations = 0;
-              trackingState.warnedSectors = trackingState.warnedSectors.filter(id => id !== trackingState.currentSectorId);
+              trackingState.warnedSectors = trackingState.warnedSectors.filter(id => id !== prevId);
+              
+              // Ресетваме флага за средна скорост при излизане от сектор
+              if (exitingSector && trackingState.hasNotifiedAverageSpeedExceeded[exitingSector.id]) {
+                delete trackingState.hasNotifiedAverageSpeedExceeded[exitingSector.id];
+              }
             }
           }
         } else if (!trackingState.currentSectorId && newSector) {
@@ -551,7 +590,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           if (trackingState.entryConfirmations[newSector.id] >= 2) {
             const entryTime = Date.now();
             
-            // Запазваме сектора
+            // Запазваме сектора с реалния маршрут
+            const newSectorAny = newSector as unknown as { routeCoordinates?: [number, number][] };
             const sectorToStore: SectorCheck = {
               id: newSector.id,
               name: newSector.name,
@@ -559,7 +599,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               startPoint: newSector.startPoint,
               endPoint: newSector.endPoint,
               active: newSector.active,
-              route: []
+              routeCoordinates: newSectorAny.routeCoordinates,
+              route: newSectorAny.routeCoordinates ? newSectorAny.routeCoordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })) : []
             };
             
             await AsyncStorage.setItem('current-sector', JSON.stringify(sectorToStore));
@@ -570,13 +611,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             trackingState.entryConfirmations = {};
             trackingState.exitConfirmations = 0;
             
-            // Проверяваме настройките
-            const settingsStr = await AsyncStorage.getItem('app-settings');
-            const settings = settingsStr ? JSON.parse(settingsStr) : {
-              notificationsEnabled: true,
-              vibrationEnabled: true,
-              soundEnabled: true
-            };
+            // Използваме вече заредените настройки (кеширани по-горе)
+            // settings вече са заредени в началото на тика
             
             // Вибрация само ако е включена
             if (settings.vibrationEnabled) {
@@ -587,8 +623,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               }
             }
             
-            // Изпращаме известие само ако е включено
-            if (settings.notificationsEnabled) {
+            // Изпращаме известие само ако е включено и не сме изпратили такова за този сектор в последните 5 секунди
+            const entryNotificationKey = `entry-${newSector.id}`;
+            const lastEntryNotificationTime = trackingState.lastNotificationTime[entryNotificationKey] || 0;
+            const NOTIFICATION_DEBOUNCE_MS = 5000;
+            const shouldSendEntryNotification = now - lastEntryNotificationTime >= NOTIFICATION_DEBOUNCE_MS;
+            
+            if (settings.notificationsEnabled && shouldSendEntryNotification) {
               await Notifications.scheduleNotificationAsync({
                 content: {
                   title: `🚗 Влизане в сектор`,
@@ -600,12 +641,19 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                     currentSpeed: speed,
                     entryTime: entryTime
                   },
-                  sound: settings.soundEnabled ?? true,
-                  vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
-                  priority: 'high',
+                  sound: settings.soundEnabled ? 'default' : false,
+                  vibrate: settings.vibrationEnabled ? [0, 300, 200, 300] : undefined,
+                  ...(Platform.OS === 'android' && {
+                    priority: Notifications.AndroidNotificationPriority.MAX,
+                    channelId: 'tracksy-alerts',
+                  }),
+                  ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
                 },
                 trigger: null,
               });
+              
+              // Запазваме времето за debounce
+              trackingState.lastNotificationTime[entryNotificationKey] = now;
             }
             
             console.log(`Entered sector ${newSector.name} with speed ${speed.toFixed(1)} km/h`);
@@ -629,6 +677,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           const avgSpeed = newReadings.reduce((a, b) => a + b, 0) / newReadings.length;
           
           // Изчисляваме оставащо разстояние
+          // Използваме реалния маршрут ако е наличен
+          const activeSectorAny = activeSector as unknown as { routeCoordinates?: [number, number][] };
           const sectorCheck: SectorCheck = {
             id: activeSector.id,
             name: activeSector.name,
@@ -636,17 +686,18 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             startPoint: activeSector.startPoint,
             endPoint: activeSector.endPoint,
             active: activeSector.active,
-            route: []
+            routeCoordinates: activeSectorAny.routeCoordinates,
+            route: activeSectorAny.routeCoordinates ? activeSectorAny.routeCoordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })) : []
           };
           const remainingDistance = calculateRemainingDistance(location.coords, sectorCheck);
-          
-          // Изчисляваме препоръчителна скорост
-          const recommendedSpeed = calculateRecommendedSpeed(avgSpeed, remainingDistance, activeSector.speedLimit);
           
           // Запазваме данните за overlay
           const entryTimeStr = await AsyncStorage.getItem('sector-entry-time');
           const entryTime = entryTimeStr ? parseInt(entryTimeStr) : Date.now();
           const timeInSector = Math.floor((Date.now() - entryTime) / 1000);
+          
+          // Изчисляваме препоръчителна скорост (с timeInSector за правилна компенсация)
+          const recommendedSpeed = calculateRecommendedSpeed(avgSpeed, remainingDistance, activeSector.speedLimit, timeInSector);
           
           const monitorData = {
             sectorName: activeSector.name,
@@ -663,45 +714,12 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           
           await AsyncStorage.setItem('sector-monitor-data', JSON.stringify(monitorData));
 
-          // Проверяваме за превишаване на моментната скорост
-          const lastSpeedWarning = trackingState.lastNotificationTime[`speed-${activeSector.id}`] || 0;
-          if (speed > activeSector.speedLimit + 5 && now - lastSpeedWarning > 30000) {
-            trackingState.lastNotificationTime[`speed-${activeSector.id}`] = now;
-            
-            // Проверяваме настройките преди да изпратим известие
-            const settingsStr = await AsyncStorage.getItem('app-settings');
-            const settings = settingsStr ? JSON.parse(settingsStr) : {
-              notificationsEnabled: true,
-              vibrationEnabled: true,
-              soundEnabled: true
-            };
-            
-            if (settings.notificationsEnabled) {
-              await Notifications.scheduleNotificationAsync({
-                content: {
-                  title: `⚠️ Превишена скорост!`,
-                  body: `🚨 ${speed.toFixed(0)} км/ч (лимит: ${activeSector.speedLimit} км/ч)\n📊 Средна: ${avgSpeed.toFixed(1)} км/ч`,
-                  data: { 
-                    sectorId: activeSector.id,
-                    type: 'speed-violation',
-                    currentSpeed: speed,
-                    averageSpeed: avgSpeed,
-                    speedLimit: activeSector.speedLimit
-                  },
-                  sound: settings.soundEnabled ?? true,
-                  vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
-                  priority: 'max',
-                },
-                trigger: null,
-              });
-            }
-          }
+          // Проверяваме за превишаване на средната скорост с флаг механизъм
+          const hasNotified = trackingState.hasNotifiedAverageSpeedExceeded[activeSector.id] || false;
+          const isExceeding = avgSpeed > activeSector.speedLimit;
           
-          // Проверяваме за превишаване на средната скорост
-          const lastAvgWarning = trackingState.lastNotificationTime[`avg-${activeSector.id}`] || 0;
-          if (avgSpeed > activeSector.speedLimit && now - lastAvgWarning > 60000) {
-            trackingState.lastNotificationTime[`avg-${activeSector.id}`] = now;
-            
+          // Ако превишаваме и не сме изпратили нотификация - изпращаме
+          if (isExceeding && !hasNotified) {
             // Проверяваме настройките преди да изпратим известие
             const settingsStr = await AsyncStorage.getItem('app-settings');
             const settings = settingsStr ? JSON.parse(settingsStr) : {
@@ -726,19 +744,34 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                     recommendedSpeed,
                     speedLimit: activeSector.speedLimit
                   },
-                  sound: settings.soundEnabled ?? true,
-                  vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
-                  priority: 'high',
+                  sound: settings.soundEnabled ? 'default' : false,
+                  vibrate: settings.vibrationEnabled ? [0, 300, 200, 300] : undefined,
+                  ...(Platform.OS === 'android' && {
+                    priority: Notifications.AndroidNotificationPriority.MAX,
+                    channelId: 'tracksy-alerts',
+                  }),
+                  ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
                 },
                 trigger: null,
               });
+              
+              // Сетваме флага - изпратена нотификация
+              trackingState.hasNotifiedAverageSpeedExceeded[activeSector.id] = true;
             }
+          } else if (!isExceeding && hasNotified) {
+            // Ако вече не превишаваме и сме изпратили нотификация - ресетваме флага
+            trackingState.hasNotifiedAverageSpeedExceeded[activeSector.id] = false;
           }
           
-          // Запазваме актуализираното състояние
-          await AsyncStorage.setItem('sector-tracking-state', JSON.stringify(trackingState));
+          // Маркираме че трябва да запазим състоянието
+          shouldSaveTrackingState = true;
         }
 
+        // Запазваме trackingState само ако е променено (веднъж на тик)
+        if (shouldSaveTrackingState) {
+          await AsyncStorage.setItem('sector-tracking-state', JSON.stringify(trackingState));
+        }
+        
         console.log(`🚀 MAX ACCURACY GPS: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}, Speed: ${speed.toFixed(1)} km/h, Accuracy: ${location.coords.accuracy?.toFixed(1)}m`);
       } catch (error) {
         console.error('Error processing background location:', error);
@@ -747,36 +780,68 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
   }
 });
 
+// Функция за осигуряване на Android нотификационен канал
+async function ensureAndroidChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync('tracksy-alerts', {
+      name: 'Tracksy Alerts',
+      description: 'Известия за сектори и превишаване на скорост',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'default',
+      vibrationPattern: [0, 300, 200, 300],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      showBadge: true,
+      lightColor: '#FF231F7C',
+    });
+  } catch (error) {
+    console.error('Failed to create notification channel:', error);
+  }
+}
+
 export class BackgroundLocationService {
   private static isRunning = false;
+  private static bgInfoNotifId: string | null = null;
 
   static async checkBatteryOptimization(): Promise<void> {
     try {
+      // Осигуряваме канала преди нотификацията
+      await ensureAndroidChannel();
+      
+      // Показваме tip само веднъж
+      const tipKey = 'battery-tip-shown';
+      const shown = await AsyncStorage.getItem(tipKey);
+      if (shown) {
+        return; // Вече е показано
+      }
+
       if (Platform.OS === 'android') {
-        // Показваме КРИТИЧНО известие за battery optimization
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: '🚨 КРИТИЧНО: Изключете Battery Optimization',
-            body: 'За МАКСИМАЛНА точност на GPS и стабилна работа в background:\n\n1. Настройки → Приложения → Speed Tracker\n2. Батерия → "Не оптимизирай"\n3. Автостарт → ВКЛЮЧЕН\n4. Рестартирайте приложението\n\nБЕЗ ТОВА GPS НЯМА ДА РАБОТИ ПРАВИЛНО!',
+            title: '🔋 ВАЖНО: Изключете Battery Optimization',
+            body: 'За максимална точност на GPS:\n\n1. Настройки → Приложения → Speed Tracker\n2. Батерия → "Не оптимизирай"\n3. Автостарт → ВКЛЮЧЕН\n\nБез това приложението може да спре в background.',
             data: { type: 'battery-optimization-critical' },
-            sound: true,
-            priority: 'max',
-            sticky: true,
+            sound: false, // Info нотификация - без звук
+            ...(Platform.OS === 'android' && {
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+              channelId: 'tracksy-alerts',
+            }),
           },
           trigger: null,
         });
+        await AsyncStorage.setItem(tipKey, '1');
       } else if (Platform.OS === 'ios') {
-        // За iOS също показваме инструкции
         await Notifications.scheduleNotificationAsync({
           content: {
             title: '🍎 iOS: Настройки за максимална точност',
             body: 'За най-добра работа на GPS:\n\n1. Настройки → Конфиденциалност → Местоположение → Speed Tracker → "Винаги"\n2. Настройки → Батерия → Без ограничения за Speed Tracker\n3. Включете "Точно местоположение"',
             data: { type: 'ios-optimization-info' },
-            sound: true,
-            priority: 'high',
+            sound: false, // Info нотификация
+            interruptionLevel: 'active',
           },
           trigger: null,
         });
+        await AsyncStorage.setItem(tipKey, '1');
       }
     } catch (error) {
       console.error('Failed to show battery optimization info:', error);
@@ -789,6 +854,9 @@ export class BackgroundLocationService {
         console.log('Background location not supported on web');
         return false;
       }
+
+      // Осигуряваме канала ПРЕДИ първата нотификация
+      await ensureAndroidChannel();
 
       // Показваме информация за battery optimization
       await this.checkBatteryOptimization();
@@ -808,8 +876,11 @@ export class BackgroundLocationService {
             body: 'Приложението НЕ МОЖЕ да работи без достъп до местоположението. Моля, разрешете достъп в настройките на устройството и рестартирайте приложението.',
             data: { type: 'permission-error-critical' },
             sound: true,
-            priority: 'max',
-            sticky: true,
+            ...(Platform.OS === 'android' && {
+              priority: Notifications.AndroidNotificationPriority.MAX,
+              channelId: 'tracksy-alerts',
+            }),
+            ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
           },
           trigger: null,
         });
@@ -829,8 +900,11 @@ export class BackgroundLocationService {
             body: 'За максимална точност на GPS и работа в background:\n\n📱 Android:\n1. Настройки → Приложения → Speed Tracker\n2. Разрешения → Местоположение\n3. Изберете "Винаги разрешено"\n\n🍎 iOS:\n1. Настройки → Конфиденциалност → Местоположение\n2. Speed Tracker → "Винаги"\n\nБЕЗ ТОВА ПРИЛОЖЕНИЕТО НЯМА ДА РАБОТИ ПРАВИЛНО!',
             data: { type: 'background-permission-critical' },
             sound: true,
-            priority: 'max',
-            sticky: true,
+            ...(Platform.OS === 'android' && {
+              priority: Notifications.AndroidNotificationPriority.MAX,
+              channelId: 'tracksy-alerts',
+            }),
+            ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
           },
           trigger: null,
         });
@@ -851,18 +925,17 @@ export class BackgroundLocationService {
       // Стартираме background location tracking с максимална точност
       try {
         await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-          accuracy: Location.Accuracy.BestForNavigation, // МАКСИМАЛНА точност GPS - най-високо качество
-          timeInterval: 100, // 0.1 секунди за МАКСИМАЛНА честота на обновления
-          distanceInterval: 0.1, // 0.1 метра за МАКСИМАЛНА чувствителност
-          deferredUpdatesInterval: 250, // Много чести обновления за максимална точност
-          mayShowUserSettingsDialog: true, // Показва диалог за настройки ако е нужно
-          pausesUpdatesAutomatically: false, // НИКОГА не спира автоматично
-          showsBackgroundLocationIndicator: true, // Показва индикатор че работи в background
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000, // 1 секунда - реалистично за battery
+          distanceInterval: 5, // 5 метра - балансирано
+          mayShowUserSettingsDialog: true,
+          pausesUpdatesAutomatically: false,
+          showsBackgroundLocationIndicator: true, // iOS only
           foregroundService: {
-            notificationTitle: '🚗 Speed Tracker - МАКСИМАЛНА ТОЧНОСТ GPS',
-            notificationBody: '📍 Следи с най-висока точност • Background режим • Винаги активен • Изключена battery optimization',
+            notificationTitle: '🚗 Speed Tracker – GPS активно',
+            notificationBody: 'Следене в background с висока точност',
             notificationColor: '#ff6b35',
-            killServiceOnDestroy: false, // НИКОГА не спира сервиса при затваряне
+            killServiceOnDestroy: false,
           },
         });
         
@@ -881,7 +954,11 @@ export class BackgroundLocationService {
               body: 'Background location не е конфигуриран правилно. Моля, свържете се с разработчика.',
               data: { type: 'config-error' },
               sound: true,
-              priority: 'high',
+              ...(Platform.OS === 'android' && {
+                priority: Notifications.AndroidNotificationPriority.HIGH,
+                channelId: 'tracksy-alerts',
+              }),
+              ...(Platform.OS === 'ios' && { interruptionLevel: 'active' }),
             },
             trigger: null,
           });
@@ -902,10 +979,14 @@ export class BackgroundLocationService {
       await Notifications.scheduleNotificationAsync({
         content: {
           title: '✅ Speed Tracker стартиран успешно',
-          body: '🚀 Работи с максимална точност на GPS\n📍 Background режим активен\n🔋 Препоръчваме да изключите battery optimization',
+          body: '🚀 Работи с висока точност на GPS\n📍 Background режим активен',
           data: { type: 'tracking-started-success' },
           sound: true,
-          priority: 'high',
+          ...(Platform.OS === 'android' && {
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            channelId: 'tracksy-alerts',
+          }),
+          ...(Platform.OS === 'ios' && { interruptionLevel: 'active' }),
         },
         trigger: null,
       });
@@ -931,8 +1012,11 @@ export class BackgroundLocationService {
 
       this.isRunning = false;
       
-      // Премахваме persistent notification
-      await Notifications.dismissNotificationAsync(BACKGROUND_NOTIFICATION_ID);
+      // Премахваме info нотификацията (ако е показана)
+      if (this.bgInfoNotifId) {
+        await Notifications.dismissNotificationAsync(this.bgInfoNotifId);
+        this.bgInfoNotifId = null;
+      }
     } catch (error) {
       console.error('Failed to stop background location tracking:', error);
     }
@@ -955,15 +1039,19 @@ export class BackgroundLocationService {
 
   private static async showBackgroundNotification(): Promise<void> {
     try {
-      await Notifications.scheduleNotificationAsync({
-        identifier: BACKGROUND_NOTIFICATION_ID,
+      // Info нотификация - foregroundService notification е persistent-ната
+      // Тази е само за информация
+      this.bgInfoNotifId = await Notifications.scheduleNotificationAsync({
         content: {
-          title: '🚗 Speed Tracker - МАКСИМАЛНА ТОЧНОСТ',
-          body: '📍 GPS следене с най-висока точност • Background режим активен • Винаги работи',
-          data: { persistent: true, maxAccuracy: true },
-          sticky: true,
-          autoDismiss: false,
-          priority: 'high',
+          title: '🚗 Speed Tracker активен',
+          body: '📍 GPS следене в background • Винаги работи',
+          data: { type: 'background-tracking-info' },
+          sound: false, // Info - без звук
+          ...(Platform.OS === 'android' && {
+            priority: Notifications.AndroidNotificationPriority.LOW,
+            channelId: 'tracksy-alerts',
+          }),
+          ...(Platform.OS === 'ios' && { interruptionLevel: 'passive' }),
         },
         trigger: null,
       });

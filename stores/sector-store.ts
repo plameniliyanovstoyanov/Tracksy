@@ -47,6 +47,10 @@ interface SectorState {
   distanceTraveled: number; // Distance traveled in current sector
   recommendedSpeed: number | null; // Recommended speed to stay within limit
   lastSpeedUpdateTime: number | null; // Last time we updated speed for time-based average calculation
+  lastEntryNotificationTime: number; // Last time we sent entry notification (debounce)
+  lastExitNotificationTime: number; // Last time we sent exit notification (debounce)
+  lastEntryNotificationSectorId: string | null; // Last sector ID we sent entry notification for
+  lastExitNotificationSectorId: string | null; // Last sector ID we sent exit notification for
 }
 
 interface SectorActions {
@@ -227,35 +231,29 @@ export const useSectorStore = create(
       distanceTraveled: 0,
       recommendedSpeed: null as number | null,
       lastSpeedUpdateTime: null as number | null,
+      lastEntryNotificationTime: 0,
+      lastExitNotificationTime: 0,
+      lastEntryNotificationSectorId: null as string | null,
+      lastExitNotificationSectorId: null as string | null,
     } as SectorState,
     (set, get) => ({
       initializeNotifications: async () => {
-        if (Platform.OS !== 'web') {
-          try {
-            const { status } = await Notifications.requestPermissionsAsync();
-            if (status === 'granted' && Platform.OS === 'android') {
-              await Notifications.setNotificationChannelAsync('sectors', {
-                name: 'Sector Notifications',
-                importance: Notifications.AndroidImportance.HIGH,
-                vibrationPattern: [0, 250, 250, 250],
-                lightColor: '#FF231F7C',
-              });
-            }
-          } catch (error) {
-            console.log('Notification channels feature is only supported on Android.');
-          }
-        }
+        // Каналът и разрешенията се управляват от settings-store
+        // Този метод може да остане празен или да бъде премахнат
       },
 
       checkSectorEntry: async (location: Location) => {
         const state = get();
-        const { sectors, currentSector, lastSectorCheckTime, sectorConfirmationCount } = state;
+        const { sectors, currentSector, lastSectorCheckTime, sectorConfirmationCount, lastEntryNotificationTime, lastEntryNotificationSectorId } = state;
         
         // Дебаунсинг - не проверяваме твърде често
         const now = Date.now();
         if (now - lastSectorCheckTime < 1000) { // 1 секунда между проверките
           return;
         }
+        
+        // Debounce за нотификации - минимум 5 секунди между нотификации за влизане
+        const NOTIFICATION_DEBOUNCE_MS = 5000;
         
         try {
           // Проверяваме дали сме в някой сектор
@@ -315,8 +313,11 @@ export const useSectorStore = create(
                 lastSpeedUpdateTime: Date.now()
               });
               
-              // Изпращаме известие ако е разрешено
-              if (Platform.OS !== 'web') {
+              // Изпращаме известие ако е разрешено и не сме изпратили такова за този сектор в последните 5 секунди
+              const shouldSendNotification = now - lastEntryNotificationTime >= NOTIFICATION_DEBOUNCE_MS || 
+                                            lastEntryNotificationSectorId !== newSector.id;
+              
+              if (Platform.OS !== 'web' && shouldSendNotification) {
                 const settings = await getNotificationSettings();
                 
                 // Вибрация само ако е включена в настройките
@@ -331,13 +332,23 @@ export const useSectorStore = create(
                       title: `🚗 Влязохте в сектор: ${newSector.name}`,
                       body: `⚠️ Ограничение: ${newSector.speedLimit} км/ч`,
                       data: { sectorId: newSector.id, type: 'sector-entry' },
-                      sound: settings.soundEnabled, // Зачитаме настройката за звук
-                      vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
-                      priority: Notifications.AndroidNotificationPriority.HIGH,
-                    },
+                    sound: settings.soundEnabled ? 'default' : false,
+                    vibrate: settings.vibrationEnabled ? [0, 300, 200, 300] : undefined,
+                    ...(Platform.OS === 'android' && {
+                      priority: Notifications.AndroidNotificationPriority.MAX,
+                      channelId: 'tracksy-alerts',
+                    }),
+                    ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
+                  },
                     trigger: null,
                   }).catch(error => {
                     console.error('Failed to send notification:', error);
+                  });
+                  
+                  // Запазваме времето и ID на сектора за debounce
+                  set({ 
+                    lastEntryNotificationTime: now,
+                    lastEntryNotificationSectorId: newSector.id
                   });
                 }
               }
@@ -358,7 +369,7 @@ export const useSectorStore = create(
 
       checkSectorExit: async (location: Location, deviceId?: string) => {
         const state = get();
-        const { currentSector, currentSectorAverageSpeed, exitConfirmationCount, lastSectorCheckTime } = state;
+        const { currentSector, currentSectorAverageSpeed, exitConfirmationCount, lastSectorCheckTime, lastExitNotificationTime, lastExitNotificationSectorId } = state;
         
         if (!currentSector) return;
         
@@ -367,6 +378,9 @@ export const useSectorStore = create(
         if (now - lastSectorCheckTime < 500) {
           return;
         }
+        
+        // Debounce за нотификации - минимум 5 секунди между нотификации за излизане
+        const NOTIFICATION_DEBOUNCE_MS = 5000;
 
         try {
           // Проверяваме дали все още сме в сектора
@@ -409,7 +423,11 @@ export const useSectorStore = create(
               });
             }
             
-            if (Platform.OS !== 'web') {
+            // Изпращаме известие ако е разрешено и не сме изпратили такова за този сектор в последните 5 секунди
+            const shouldSendNotification = now - lastExitNotificationTime >= NOTIFICATION_DEBOUNCE_MS || 
+                                          lastExitNotificationSectorId !== currentSector.id;
+            
+            if (Platform.OS !== 'web' && shouldSendNotification) {
               const settings = await getNotificationSettings();
               const exceeded = currentSectorAverageSpeed > currentSector.speedLimit;
               
@@ -429,13 +447,23 @@ export const useSectorStore = create(
                     title: `✅ Излязохте от сектор: ${currentSector.name}`,
                     body: `📊 Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n${exceeded ? '⚠️ Превишена средна скорост!' : '✅ В рамките на ограничението'}`,
                     data: { sectorId: currentSector.id, type: 'sector-exit', exceeded },
-                    sound: settings.soundEnabled, // Зачитаме настройката за звук
-                    vibrate: settings.vibrationEnabled ? [0, 250, 250, 250] : undefined,
-                    priority: Notifications.AndroidNotificationPriority.HIGH,
+                    sound: settings.soundEnabled ? 'default' : false,
+                    vibrate: settings.vibrationEnabled ? [0, 300, 200, 300] : undefined,
+                    ...(Platform.OS === 'android' && {
+                      priority: Notifications.AndroidNotificationPriority.MAX,
+                      channelId: 'tracksy-alerts',
+                    }),
+                    ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
                   },
                   trigger: null,
                 }).catch(error => {
                   console.error('Failed to send notification:', error);
+                });
+                
+                // Запазваме времето и ID на сектора за debounce
+                set({ 
+                  lastExitNotificationTime: now,
+                  lastExitNotificationSectorId: currentSector.id
                 });
               }
             }
@@ -661,9 +689,11 @@ export const useSectorStore = create(
         clearRouteCache();
         console.log('🔄 Force reloading sector routes (cache cleared)...');
         
-        // Clear cache for sectors 27 and 28 (Цариградско шосе) since they were updated
-        clearRouteCacheForSector('27');
-        clearRouteCacheForSector('28');
+        // Clear cache for updated sectors
+        clearRouteCacheForSector('27'); // Цариградско шосе - посока 1
+        clearRouteCacheForSector('28'); // Цариградско шосе - посока 2
+        clearRouteCacheForSector('32'); // Бул. България - посока 1
+        clearRouteCacheForSector('33'); // Бул. България - посока 2
         
         const actions = get() as SectorState & SectorActions;
         return actions.loadSectorRoutes(3); // Start with fresh retries

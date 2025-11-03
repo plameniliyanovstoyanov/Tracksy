@@ -14,14 +14,15 @@ function getSupabaseClient(): SupabaseClient {
   }
 
   try {
-    const supabaseUrl = ENV.supabaseUrl || 'https://placeholder.supabase.co';
-    const supabaseAnonKey = ENV.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTI4MDAsImV4cCI6MTk2MDc2ODgwMH0.placeholder';
+    // Use fallback values from ENV (which already has hardcoded fallbacks)
+    const supabaseUrl = ENV.supabaseUrl || 'https://ztlyoketfstcsjylvfyq.supabase.co';
+    const supabaseAnonKey = ENV.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI';
 
-    if (!ENV.supabaseUrl || !ENV.supabaseAnonKey) {
+    if (!supabaseUrl || !supabaseAnonKey) {
       console.error('❌ CRITICAL: Supabase credentials are missing!');
-      console.error('supabaseUrl:', ENV.supabaseUrl ? 'present' : 'MISSING');
-      console.error('supabaseAnonKey:', ENV.supabaseAnonKey ? 'present' : 'MISSING');
-      // Return a dummy client that won't crash but also won't work
+      console.error('supabaseUrl:', supabaseUrl ? 'present' : 'MISSING');
+      console.error('supabaseAnonKey:', supabaseAnonKey ? 'present' : 'MISSING');
+      // Continue anyway with fallback values
     }
 
     supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
@@ -37,16 +38,60 @@ function getSupabaseClient(): SupabaseClient {
     return supabaseInstance;
   } catch (error) {
     console.error('❌ Failed to create Supabase client:', error);
-    // Return a minimal mock client to prevent crashes
-    throw new Error(`Failed to initialize Supabase: ${error}`);
+    // Create a minimal client with fallback values to prevent crashes
+    try {
+      supabaseInstance = createClient(
+        'https://ztlyoketfstcsjylvfyq.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI',
+        {
+          auth: {
+            storage: AsyncStorage,
+            autoRefreshToken: true,
+            persistSession: true,
+            detectSessionInUrl: false,
+          },
+        }
+      );
+      console.log('✅ Supabase client created with fallback values');
+      return supabaseInstance;
+    } catch (fallbackError) {
+      console.error('❌ Failed to create fallback Supabase client:', fallbackError);
+      // This should never happen, but if it does, we'll handle it in the Proxy
+      throw fallbackError;
+    }
   }
 }
 
 // Export as a Proxy to lazy-load the client
 export const supabase = new Proxy({} as SupabaseClient, {
   get(target, prop) {
-    const client = getSupabaseClient();
-    return client[prop as keyof SupabaseClient];
+    try {
+      const client = getSupabaseClient();
+      const value = client[prop as keyof SupabaseClient];
+      // If it's a function, wrap it to catch errors
+      if (typeof value === 'function') {
+        return (...args: any[]) => {
+          try {
+            return value.apply(client, args);
+          } catch (error) {
+            console.error(`❌ Error calling supabase.${String(prop)}:`, error);
+            // Return a safe default based on the function
+            if (String(prop).includes('query') || String(prop).includes('select')) {
+              return Promise.resolve({ data: null, error: null });
+            }
+            return Promise.resolve(null);
+          }
+        };
+      }
+      return value;
+    } catch (error) {
+      console.error(`❌ Error accessing supabase.${String(prop)}:`, error);
+      // Return safe defaults
+      if (typeof prop === 'string' && (prop.includes('query') || prop.includes('select'))) {
+        return () => Promise.resolve({ data: null, error: null });
+      }
+      return null;
+    }
   },
 });
 

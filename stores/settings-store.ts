@@ -191,7 +191,28 @@ export const useSettingsStore = create(
         }
 
         try {
-          const { status } = await Notifications.requestPermissionsAsync();
+          // Заявка за разрешения с time-sensitive за iOS
+          const { status } = await Notifications.requestPermissionsAsync({
+            ios: {
+              allowAlert: true,
+              allowSound: true,
+              allowBadge: true,
+            },
+          });
+          
+          // Създаваме канал ПРЕДИ първата нотификация (Android)
+          if (status === 'granted' && Platform.OS === 'android') {
+            await Notifications.setNotificationChannelAsync('tracksy-alerts', {
+              name: 'Tracksy Alerts',
+              description: 'Известия за сектори и превишаване на скорост',
+              importance: Notifications.AndroidImportance.MAX,
+              sound: 'default',
+              vibrationPattern: [0, 300, 200, 300],
+              lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+              showBadge: true,
+              lightColor: '#FF231F7C',
+            });
+          }
           if (status !== 'granted') {
             console.log('Notification permissions not granted');
             set({ notificationsEnabled: false });

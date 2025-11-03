@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
   },
   limitLabel: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
   },
   mainSpeedContainer: {
@@ -270,12 +270,12 @@ const styles = StyleSheet.create({
   },
   averageLabel: {
     color: '#888',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '500',
     marginBottom: 2,
   },
   averageValue: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '600',
   },
   statsRow: {
@@ -291,13 +291,13 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     color: '#888',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '500',
     textAlign: 'center',
   },
   statValue: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '600',
   },
   recommendationContainer: {

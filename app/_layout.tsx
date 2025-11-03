@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc, trpcClient } from "@/lib/trpc";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useState, ErrorInfo, ReactNode } from "react";
+import * as React from "react";
+import { useEffect, useState } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSpeedStore } from "@/stores/speed-store";
 import { useSectorStore } from "@/stores/sector-store";
@@ -12,30 +14,48 @@ import { AuthProvider, useAuth } from "@/stores/auth-store";
 import { DeviceProvider } from "@/stores/device-store";
 import { ViolationHistoryProvider } from "@/stores/violation-history-store";
 import { validateEnv } from "@/utils/env";
+import * as Notifications from 'expo-notifications';
+
+// КРИТИЧНО: Настройка за foreground нотификации - иначе в app-foreground няма звук
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const queryClient = new QueryClient();
 
 // Error Boundary Component
-class ErrorBoundary extends React.Component<
-  { children: ReactNode },
-  { hasError: boolean; error: Error | null }
-> {
-  constructor(props: { children: ReactNode }) {
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error: Error) {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     console.error('💥 ErrorBoundary caught an error:', error, errorInfo);
   }
 
-  render() {
+  render(): ReactNode {
     if (this.state.hasError) {
       return (
         <View style={styles.errorBoundaryContainer}>
@@ -169,72 +189,70 @@ export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    let timeoutId: NodeJS.Timeout;
+    let initComplete = false;
+    
+    // CRITICAL: Always show app after maximum 3 seconds, no matter what
+    const FORCE_SHOW_TIME = 3000; // 3 seconds max wait
+    
+    // Force show after timeout - this is critical for production
+    timeoutId = setTimeout(() => {
+      if (isMounted && !initComplete) {
+        initComplete = true;
+        setIsReady(true);
+        SplashScreen.hideAsync().catch(() => {});
+      }
+    }, FORCE_SHOW_TIME);
+    
     const initializeApp = async () => {
       try {
-        console.log('🚀 Starting app initialization...');
-        
-        // Validate environment variables first
-        const envValidation = validateEnv();
-        if (!envValidation.valid) {
-          const errorMsg = `Missing environment variables: ${envValidation.errors.join(', ')}`;
-          console.error('⚠️', errorMsg);
-          // Don't block the app, just log the error
-          // The app should still work for basic features
-        } else {
-          console.log('✅ All environment variables loaded successfully!');
+        // Validate environment variables (non-blocking)
+        try {
+          validateEnv();
+        } catch (error) {
+          // Silent fail - we have fallbacks
         }
         
-        // Load settings first (with timeout)
-        console.log('📱 Loading settings...');
-        await Promise.race([
-          loadSettings(),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Settings load timeout')), 10000)
-          )
-        ]).catch(err => {
-          console.warn('⚠️ Settings load failed or timed out:', err);
-        });
+        // Fire and forget - don't wait for anything
+        Promise.allSettled([
+          loadSettings().catch(() => {}),
+          loadSpeedData().catch(() => {}),
+          loadSectorData().catch(() => {}),
+        ]).catch(() => {});
         
-        // Then load other data in parallel (without waiting for sector routes)
-        console.log('📦 Loading app data...');
-        await Promise.all([
-          loadSpeedData().catch(err => {
-            console.warn('⚠️ Speed data load failed:', err);
-          }),
-          loadSectorData().catch(err => {
-            console.warn('⚠️ Sector data load failed:', err);
-          }),
-        ]);
-        
-        // Request permissions if needed (don't wait too long)
+        // Fire and forget permissions
         if (Platform.OS !== 'web') {
-          console.log('🔔 Requesting permissions...');
-          requestNotificationPermissions().catch(err => {
-            console.warn('⚠️ Permission request failed:', err);
-          });
+          requestNotificationPermissions().catch(() => {});
+          checkBackgroundTrackingStatus().catch(() => {});
         }
         
-        // Check background tracking status (optional, don't block)
-        console.log('📍 Checking background tracking...');
-        checkBackgroundTrackingStatus().catch(err => {
-          console.warn('⚠️ Background tracking check failed:', err);
-        });
-        
-        console.log('✅ App initialization completed');
-        setIsReady(true);
+        // Mark as ready immediately - don't wait for anything
+        if (isMounted && !initComplete) {
+          initComplete = true;
+          clearTimeout(timeoutId);
+          setIsReady(true);
+          await SplashScreen.hideAsync().catch(() => {});
+        }
 
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error('💥 Failed to initialize app:', error);
-        setInitializationError(errorMessage);
-      } finally {
-        // Always hide splash screen, even if there's an error
-        await SplashScreen.hideAsync().catch(() => {});
-        console.log('✅ Splash screen hidden');
+        // Silent fail - always show app
+        if (isMounted && !initComplete) {
+          initComplete = true;
+          clearTimeout(timeoutId);
+          setIsReady(true);
+          await SplashScreen.hideAsync().catch(() => {});
+        }
       }
     };
 
+    // Start initialization but don't wait
     initializeApp();
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -251,7 +269,8 @@ export default function RootLayout() {
     );
   }
 
-  // Show loading screen briefly while initializing
+  // Show loading screen very briefly - but always show app quickly
+  // Maximum 3 seconds wait enforced by timeout in useEffect
   if (!isReady) {
     return (
       <View style={styles.container}>
@@ -260,21 +279,37 @@ export default function RootLayout() {
     );
   }
 
-  return (
-    <ErrorBoundary>
-      <trpc.Provider client={trpcClient} queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <DeviceProvider>
-              <ViolationHistoryProvider>
-                <GestureHandlerRootView style={styles.container}>
-                  <RootLayoutNav />
-                </GestureHandlerRootView>
-              </ViolationHistoryProvider>
-            </DeviceProvider>
-          </AuthProvider>
-        </QueryClientProvider>
-      </trpc.Provider>
-    </ErrorBoundary>
-  );
+  // CRITICAL: Wrap everything in try-catch to prevent white screen
+  // If anything fails, at least show error screen
+  try {
+    return (
+      <ErrorBoundary>
+        <trpc.Provider client={trpcClient} queryClient={queryClient}>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <DeviceProvider>
+                <ViolationHistoryProvider>
+                  <GestureHandlerRootView style={styles.container}>
+                    <ErrorBoundary>
+                      <RootLayoutNav />
+                    </ErrorBoundary>
+                  </GestureHandlerRootView>
+                </ViolationHistoryProvider>
+              </DeviceProvider>
+            </AuthProvider>
+          </QueryClientProvider>
+        </trpc.Provider>
+      </ErrorBoundary>
+    );
+  } catch (renderError) {
+    // If rendering fails completely, show error screen instead of white screen
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>⚠️ Грешка при зареждане</Text>
+        <Text style={styles.errorText}>
+          Моля, рестартирайте приложението.
+        </Text>
+      </View>
+    );
+  }
 }

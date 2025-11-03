@@ -153,9 +153,11 @@ export const useBatteryOptimization = create(
                 title: '🔋 ВАЖНО: Изключете Battery Optimization',
                 body: 'За максимална точност на GPS:\n\n1. Настройки → Приложения\n2. Speed Tracker → Батерия\n3. "Не оптимизирай"\n4. Рестартирайте приложението\n\nБез това приложението няма да работи правилно в background!',
                 data: { type: 'battery-optimization-critical' },
-                sound: true,
-                priority: 'max',
-                sticky: true,
+                sound: false, // Info - без звук
+                ...(Platform.OS === 'android' && {
+                  priority: Notifications.AndroidNotificationPriority.HIGH,
+                }),
+                ...(Platform.OS !== 'android' && { interruptionLevel: 'active' }),
               },
               trigger: null,
             });
@@ -180,7 +182,11 @@ export const useBatteryOptimization = create(
               body: 'За най-добра работа:\n\n📱 Android:\n• Настройки → Батерия → Не оптимизирай\n• Настройки → Приложения → Автостарт: ВКЛ\n\n🍎 iOS:\n• Настройки → Конфиденциалност → Винаги разрешено\n• Настройки → Батерия → Без ограничения',
               data: { type: 'performance-instructions' },
               sound: false,
-              priority: 'high',
+              ...(Platform.OS === 'android' && {
+                priority: Notifications.AndroidNotificationPriority.HIGH,
+                channelId: 'tracksy-alerts',
+              }),
+              ...(Platform.OS === 'ios' && { interruptionLevel: 'active' }),
             },
             trigger: null,
           });
@@ -205,7 +211,11 @@ export const useBatteryOptimization = create(
                 body: 'Моля, разрешете достъп до местоположението за да работи приложението.',
                 data: { type: 'location-permission-required' },
                 sound: true,
-                priority: 'high',
+                ...(Platform.OS === 'android' && {
+                  priority: Notifications.AndroidNotificationPriority.HIGH,
+                  channelId: 'tracksy-alerts',
+                }),
+                ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
               },
               trigger: null,
             });
@@ -221,8 +231,11 @@ export const useBatteryOptimization = create(
                 body: 'За работа в background:\n\n📱 Android: Настройки → Приложения → Speed Tracker → Разрешения → Местоположение → "Винаги разрешено"\n\n🍎 iOS: Настройки → Конфиденциалност → Местоположение → Speed Tracker → "Винаги"',
                 data: { type: 'background-location-required' },
                 sound: true,
-                priority: 'max',
-                sticky: true,
+                ...(Platform.OS === 'android' && {
+                  priority: Notifications.AndroidNotificationPriority.MAX,
+                  channelId: 'tracksy-alerts',
+                }),
+                ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
               },
               trigger: null,
             });

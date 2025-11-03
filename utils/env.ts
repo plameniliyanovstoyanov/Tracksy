@@ -1,29 +1,44 @@
 import Constants from 'expo-constants';
 
+// Production fallback values - ALWAYS available
+const PRODUCTION_SUPABASE_URL = 'https://ztlyoketfstcsjylvfyq.supabase.co';
+const PRODUCTION_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI';
+const PRODUCTION_MAPBOX_TOKEN = 'pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ';
+
 // Safely try to get environment variables with fallbacks
 function getExtra() {
   try {
-    return Constants.expoConfig?.extra ?? Constants.manifest?.extra ?? {};
+    // Try multiple ways to get constants
+    const config = Constants.expoConfig;
+    const manifest = Constants.manifest;
+    const extra = config?.extra ?? manifest?.extra ?? {};
+    return extra;
   } catch (error) {
-    console.error('❌ Failed to read Constants:', error);
+    // Silent fail - return empty object, fallbacks will be used
     return {};
   }
 }
 
 const extra = getExtra();
 
-console.log('📦 Constants available:', Constants ? '✅' : '❌');
-console.log('📦 extra keys:', Object.keys(extra));
-
+// ALWAYS use fallbacks - never fail
 export const ENV = {
-  supabaseUrl: String(extra.SUPABASE_URL || extra.EXPO_PUBLIC_SUPABASE_URL || ''),
-  supabaseAnonKey: String(extra.SUPABASE_ANON_KEY || extra.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''),
-  mapboxToken: String(extra.MAPBOX_TOKEN || extra.EXPO_PUBLIC_MAPBOX_TOKEN || ''),
+  supabaseUrl: String(
+    extra?.SUPABASE_URL || 
+    extra?.EXPO_PUBLIC_SUPABASE_URL || 
+    PRODUCTION_SUPABASE_URL
+  ),
+  supabaseAnonKey: String(
+    extra?.SUPABASE_ANON_KEY || 
+    extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
+    PRODUCTION_SUPABASE_ANON_KEY
+  ),
+  mapboxToken: String(
+    extra?.MAPBOX_TOKEN || 
+    extra?.EXPO_PUBLIC_MAPBOX_TOKEN || 
+    PRODUCTION_MAPBOX_TOKEN
+  ),
 };
-
-console.log('🔑 ENV.supabaseUrl:', ENV.supabaseUrl ? `✅ Found (${ENV.supabaseUrl.substring(0, 20)}...)` : '❌ Missing');
-console.log('🔑 ENV.supabaseAnonKey:', ENV.supabaseAnonKey ? `✅ Found (${ENV.supabaseAnonKey.substring(0, 20)}...)` : '❌ Missing');
-console.log('🔑 ENV.mapboxToken:', ENV.mapboxToken ? `✅ Found (${ENV.mapboxToken.substring(0, 20)}...)` : '❌ Missing');
 
 /**
  * Validates that all required environment variables are present
