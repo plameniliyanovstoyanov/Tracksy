@@ -5,12 +5,14 @@ import * as Location from 'expo-location';
 import { sectors } from '@/data/sectors';
 import WebView from 'react-native-webview';
 import { useSectorStore } from '@/stores/sector-store';
+import { ENV } from '@/utils/env';
 
 interface MapViewComponentProps {
   location: Location.LocationObject | null;
 }
 
-const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ';
+// Use centralized token from ENV (single source of truth)
+const MAPBOX_TOKEN = ENV.mapboxToken;
 
 export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) => {
   const webViewRef = useRef<WebView>(null);

@@ -3,7 +3,11 @@ import Constants from 'expo-constants';
 // Production fallback values - ALWAYS available
 const PRODUCTION_SUPABASE_URL = 'https://ztlyoketfstcsjylvfyq.supabase.co';
 const PRODUCTION_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI';
-const PRODUCTION_MAPBOX_TOKEN = 'pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ';
+
+// Mapbox token - ONLY for development fallback
+// ⚠️ SECURITY WARNING: In production, this MUST come from EAS Secrets or env variables
+// Public tokens in code can be decompiled and will exhaust your quota
+const DEV_MAPBOX_TOKEN = __DEV__ ? 'pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ' : '';
 
 // Safely try to get environment variables with fallbacks
 function getExtra() {
@@ -36,7 +40,7 @@ export const ENV = {
   mapboxToken: String(
     extra?.MAPBOX_TOKEN || 
     extra?.EXPO_PUBLIC_MAPBOX_TOKEN || 
-    PRODUCTION_MAPBOX_TOKEN
+    DEV_MAPBOX_TOKEN
   ),
 };
 
@@ -44,8 +48,9 @@ export const ENV = {
  * Validates that all required environment variables are present
  * Call this early in your app (e.g., in App.tsx or _layout.tsx)
  */
-export function validateEnv(): { valid: boolean; errors: string[] } {
+export function validateEnv(): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
+  const warnings: string[] = [];
   
   if (!ENV.supabaseUrl || !/^https?:\/\//.test(ENV.supabaseUrl)) {
     errors.push('SUPABASE_URL');
@@ -57,6 +62,9 @@ export function validateEnv(): { valid: boolean; errors: string[] } {
   
   if (!ENV.mapboxToken) {
     errors.push('MAPBOX_TOKEN');
+  } else if (__DEV__ && ENV.mapboxToken === DEV_MAPBOX_TOKEN) {
+    // Warning only in dev - в production винаги трябва да е от env
+    warnings.push('MAPBOX_TOKEN is using dev fallback - set EXPO_PUBLIC_MAPBOX_TOKEN for production');
   }
   
   if (errors.length > 0) {
@@ -64,9 +72,14 @@ export function validateEnv(): { valid: boolean; errors: string[] } {
     console.error('Please ensure .env file exists with all required variables');
   }
   
+  if (warnings.length > 0) {
+    console.warn('⚠️ Environment warnings:', warnings.join(', '));
+  }
+  
   return {
     valid: errors.length === 0,
-    errors
+    errors,
+    warnings
   };
 }
 

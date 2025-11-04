@@ -5,6 +5,16 @@ import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sectors } from '@/data/sectors';
+import {
+  PROXIMITY_THRESHOLD_ENTER,
+  PROXIMITY_THRESHOLD_EXIT,
+  WARNING_DISTANCE_M,
+  ROUTE_SNAP_THRESHOLD_M,
+  GPS_MAX_ACCURACY_M,
+  GPS_SPIKE_THRESHOLD_KMH,
+  MAX_SPEED_READINGS,
+} from '@/constants/proximity';
+import { computeRecommendedSpeedKmH } from '@/utils/speed-calculations';
 
 const LOCATION_TASK_NAME = 'background-location-task';
 
@@ -43,7 +53,7 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
 }
 
 // Проверка дали точка е близо до сектор
-function isPointNearSector(point: { latitude: number; longitude: number }, sector: SectorCheck, threshold: number = 80): boolean {
+function isPointNearSector(point: { latitude: number; longitude: number }, sector: SectorCheck, threshold: number = PROXIMITY_THRESHOLD_ENTER): boolean {
   // Ако има routeCoordinates, проверяваме разстоянието до всеки сегмент от маршрута
   if (sector.routeCoordinates && sector.routeCoordinates.length > 1) {
     for (let i = 0; i < sector.routeCoordinates.length - 1; i++) {
@@ -112,7 +122,7 @@ function distanceToLineSegment(point: { latitude: number; longitude: number }, l
 }
 
 // Проверка дали се приближаваме към сектор по правилния път
-function isApproachingSectorOnRoute(point: { latitude: number; longitude: number }, sector: SectorCheck, warningDistance: number = 500): boolean {
+function isApproachingSectorOnRoute(point: { latitude: number; longitude: number }, sector: SectorCheck, warningDistance: number = WARNING_DISTANCE_M): boolean {
   // Първо проверяваме дали сме близо до началото на сектора
   const distToStart = getDistance(point.latitude, point.longitude, sector.startPoint.lat, sector.startPoint.lng);
   
@@ -156,8 +166,8 @@ function isApproachingSectorOnRoute(point: { latitude: number; longitude: number
       }
     }
     
-    // Трябва да сме близо до маршрута (в рамките на 100м) и на правилния път
-    return minDistanceToRoute < 100 && isOnApproachPath;
+    // Трябва да сме близо до маршрута (в рамките на ROUTE_SNAP_THRESHOLD_M) и на правилния път
+    return minDistanceToRoute < ROUTE_SNAP_THRESHOLD_M && isOnApproachPath;
   } else {
     // Ако няма маршрут, проверяваме дали сме на въображаемата линия между началото и края
     const distanceToSectorLine = distanceToLineSegment(
@@ -166,9 +176,9 @@ function isApproachingSectorOnRoute(point: { latitude: number; longitude: number
       [sector.endPoint.lng, sector.endPoint.lat]
     );
     
-    // Трябва да сме близо до линията на сектора (в рамките на 100м)
+    // Трябва да сме близо до линията на сектора (в рамките на ROUTE_SNAP_THRESHOLD_M)
     // и в предупредителната зона около началото
-    return distanceToSectorLine < 100 && distToStart < warningDistance && distToStart > 50;
+    return distanceToSectorLine < ROUTE_SNAP_THRESHOLD_M && distToStart < warningDistance && distToStart > 50;
   }
 }
 
@@ -200,45 +210,18 @@ function calculateRemainingDistance(currentPos: { latitude: number; longitude: n
     remainingDistance += getDistance(point1.lat, point1.lng, point2.lat, point2.lng);
   }
   
-  // Добавяме разстоянието до края
+  // Добавяме разстоянието до края само ако последната точка е далечна (>30м)
   if (sector.route.length > 0) {
     const lastPoint = sector.route[sector.route.length - 1];
-    remainingDistance += getDistance(lastPoint.lat, lastPoint.lng, sector.endPoint.lat, sector.endPoint.lng);
+    const tail = getDistance(lastPoint.lat, lastPoint.lng, sector.endPoint.lat, sector.endPoint.lng);
+    if (tail > 30) remainingDistance += tail;
   }
   
   return remainingDistance;
 }
 
-// Изчисляване на препоръчителна скорост за компенсация
-function calculateRecommendedSpeed(
-  currentAvgSpeed: number,
-  remainingDistance: number,
-  speedLimit: number,
-  timeInSectorSec?: number
-): number | null {
-  if (remainingDistance <= 0 || !timeInSectorSec || timeInSectorSec <= 0) return null;
-  
-  // Ако средната скорост е под лимита, можем да карам с лимита
-  if (currentAvgSpeed <= speedLimit) {
-    return Math.min(speedLimit, currentAvgSpeed + 10);
-  }
-  
-  // Изчисляваме изминато разстояние
-  const distanceSoFar = (currentAvgSpeed / 3.6) * timeInSectorSec; // метри
-  const limit = speedLimit; // km/h
-  
-  // Търсим x така, че комбинирана средна ≤ limit:
-  // (v_avg*d_s + x*d_r) / (d_s + d_r) ≤ limit
-  // => x ≤ (limit*(d_s + d_r) - v_avg*d_s) / d_r
-  const x = ((limit * (distanceSoFar + remainingDistance)) - (currentAvgSpeed * distanceSoFar)) / remainingDistance;
-  
-  // x е в km/h; ограничаваме разумно
-  if (x < 0) {
-    return -1; // Индикация че трябва да спрем или караме много бавно
-  }
-  
-  return Math.max(20, Math.min(x, speedLimit - 5));
-}
+// Използваме shared функцията от utils/speed-calculations.ts
+// Запазена за backward compatibility, но ще използваме директно computeRecommendedSpeedKmH
 
 // Състояние за проследяване на потвърждения
 interface SectorTrackingState {
@@ -249,6 +232,70 @@ interface SectorTrackingState {
   lastNotificationTime: { [key: string]: number };
   warnedSectors: string[];
   hasNotifiedAverageSpeedExceeded: { [sectorId: string]: boolean }; // Флаг за да не дублираме нотификации за средна скорост
+}
+
+// In-memory cache за намаляване на I/O операции
+// Flush-ва се към AsyncStorage периодично или при събития
+let memTrackingState: SectorTrackingState | null = null;
+let memSpeedReadings: number[] = [];
+let memLastSpeed: number | undefined = undefined; // за spike detection
+let lastFlushTime = 0;
+const FLUSH_INTERVAL_MS = 5000; // flush на всеки 5 секунди
+
+// Зарежда състоянието от AsyncStorage в memory cache
+async function loadStateFromStorage(): Promise<void> {
+  try {
+    const trackingStateStr = await AsyncStorage.getItem('sector-tracking-state');
+    memTrackingState = trackingStateStr ? JSON.parse(trackingStateStr) : {
+      lastCheckTime: 0,
+      entryConfirmations: {},
+      exitConfirmations: 0,
+      currentSectorId: null,
+      lastNotificationTime: {},
+      warnedSectors: [],
+      hasNotifiedAverageSpeedExceeded: {}
+    };
+    
+    const speedReadingsStr = await AsyncStorage.getItem('sector-speed-readings');
+    memSpeedReadings = speedReadingsStr ? JSON.parse(speedReadingsStr) : [];
+    
+    // Инициализираме флага ако липсва (backward compatibility)
+    if (memTrackingState && !memTrackingState.hasNotifiedAverageSpeedExceeded) {
+      memTrackingState.hasNotifiedAverageSpeedExceeded = {};
+    }
+  } catch (error) {
+    console.error('Failed to load state from storage:', error);
+    // Fallback към празно състояние
+    memTrackingState = {
+      lastCheckTime: 0,
+      entryConfirmations: {},
+      exitConfirmations: 0,
+      currentSectorId: null,
+      lastNotificationTime: {},
+      warnedSectors: [],
+      hasNotifiedAverageSpeedExceeded: {}
+    };
+    memSpeedReadings = [];
+  }
+}
+
+// Flush-ва memory cache към AsyncStorage
+async function flushStateToStorage(force: boolean = false): Promise<void> {
+  const now = Date.now();
+  if (!force && now - lastFlushTime < FLUSH_INTERVAL_MS) {
+    return; // Не е време за flush
+  }
+  
+  lastFlushTime = now;
+  
+  try {
+    await AsyncStorage.multiSet([
+      ['sector-tracking-state', JSON.stringify(memTrackingState)],
+      ['sector-speed-readings', JSON.stringify(memSpeedReadings)],
+    ]);
+  } catch (error) {
+    console.error('Failed to flush state to storage:', error);
+  }
 }
 
 // Background task definition
@@ -264,11 +311,21 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     
     if (location) {
       try {
-        let speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
-        
-        if (speed < 1) {
-          speed = 0;
+        // GPS филтри: проверяваме accuracy
+        const accuracy = location.coords.accuracy ?? 9999;
+        if (accuracy > GPS_MAX_ACCURACY_M) {
+          return; // Прескачаме точки с лоша точност
         }
+        
+        // Изчисляваме скоростта
+        let speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
+        if (speed < 0) speed = 0;
+        
+        // Spike detection: игнорираме голяма промяна в скоростта
+        if (memLastSpeed !== undefined && Math.abs(speed - memLastSpeed) > GPS_SPIKE_THRESHOLD_KMH) {
+          return; // Прескачаме spike-овете
+        }
+        memLastSpeed = speed;
         
         const locationData: LocationData = {
           latitude: location.coords.latitude,
@@ -280,22 +337,12 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         // Запазваме последното местоположение
         await AsyncStorage.setItem('last-location', JSON.stringify(locationData));
 
-        // Зареждаме състоянието за проследяване (кешираме за намаляване на I/O)
-        const trackingStateStr = await AsyncStorage.getItem('sector-tracking-state');
-        let trackingState: SectorTrackingState = trackingStateStr ? JSON.parse(trackingStateStr) : {
-          lastCheckTime: 0,
-          entryConfirmations: {},
-          exitConfirmations: 0,
-          currentSectorId: null,
-          lastNotificationTime: {},
-          warnedSectors: [],
-          hasNotifiedAverageSpeedExceeded: {}
-        };
-        
-        // Инициализираме флага ако липсва (backward compatibility)
-        if (!trackingState.hasNotifiedAverageSpeedExceeded) {
-          trackingState.hasNotifiedAverageSpeedExceeded = {};
+        // Lazy-load state от storage ако не е в memory
+        if (memTrackingState === null) {
+          await loadStateFromStorage();
         }
+        
+        const trackingState = memTrackingState!;
         
         // Дебаунсинг - балансирано за battery
         const now = Date.now();
@@ -316,14 +363,26 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           soundEnabled: true
         };
         
+        // Зареждаме маршрутите на секторите от AsyncStorage ПРЕДИ early-warning проверката
+        const sectorsWithRoutesStr = await AsyncStorage.getItem('sectors-with-routes');
+        let sectorsWithRoutes: any[] = sectors;
+        if (sectorsWithRoutesStr) {
+          try {
+            sectorsWithRoutes = JSON.parse(sectorsWithRoutesStr);
+          } catch {
+            console.log('Failed to parse sectors with routes, using default');
+          }
+        }
+        
         // Запазваме trackingState само накрая (веднъж), не на всяка стъпка
         let shouldSaveTrackingState = false;
         
         // Проверяваме за предупреждения преди влизане в сектор (само ако е включено и не сме вече в сектор)
         if (settings.earlyWarningEnabled && !trackingState.currentSectorId) {
-          const WARNING_DISTANCE = 2000; // Фиксирано разстояние: 2км
+          // Използваме sectorsWithRoutes ако има, иначе fallback към sectors
+          const warnSource = sectorsWithRoutes?.length ? sectorsWithRoutes : sectors;
           
-          for (const sector of sectors) {
+          for (const sector of warnSource) {
             if (!sector.active) continue;
             
             // Използваме реалния маршрут ако е наличен
@@ -342,13 +401,14 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             const warningKey = `warning-${sector.id}`;
             
             // ВАЖНО: Проверяваме дали се приближаваме ПО ПРАВИЛНИЯ ПЪТ
-            const isApproaching = isApproachingSectorOnRoute(location.coords, sectorCheck, WARNING_DISTANCE);
+            const isApproaching = isApproachingSectorOnRoute(location.coords, sectorCheck, WARNING_DISTANCE_M);
             
             if (isApproaching) {
               // Проверяваме дали не сме изпратили известие скоро
               const lastWarningTime = trackingState.lastNotificationTime[warningKey] || 0;
               if (now - lastWarningTime > 120000) { // Минимум 2 минути между предупрежденията
                 trackingState.lastNotificationTime[warningKey] = now;
+                shouldSaveTrackingState = true; // ВАЖНО: Запазваме промяната
                 
                 // Определяме текста според разстоянието
                 let distanceText = '';
@@ -388,21 +448,11 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             
             // Почистваме стари предупреждения ако сме се отдалечили от сектора
             const distToStart = getDistance(location.coords.latitude, location.coords.longitude, sector.startPoint.lat, sector.startPoint.lng);
-            if (distToStart > WARNING_DISTANCE + 500) {
+            if (distToStart > WARNING_DISTANCE_M + 500) {
               // Почистваме предупреждението за този сектор
               delete trackingState.lastNotificationTime[warningKey];
+              shouldSaveTrackingState = true; // Запазваме промяната
             }
-          }
-        }
-
-        // Зареждаме маршрутите на секторите от AsyncStorage
-        const sectorsWithRoutesStr = await AsyncStorage.getItem('sectors-with-routes');
-        let sectorsWithRoutes: any[] = sectors;
-        if (sectorsWithRoutesStr) {
-          try {
-            sectorsWithRoutes = JSON.parse(sectorsWithRoutesStr);
-          } catch {
-            console.log('Failed to parse sectors with routes, using default');
           }
         }
         
@@ -421,7 +471,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             route: sector.routeCoordinates ? sector.routeCoordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })) : []
           };
           
-          const isNear = isPointNearSector(location.coords, sectorCheck, 50);
+          const isNear = isPointNearSector(location.coords, sectorCheck, PROXIMITY_THRESHOLD_ENTER);
           if (isNear) {
             console.log(`✅ Found sector nearby: ${sector.name} (ID: ${sector.id})`);
           }
@@ -435,10 +485,27 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         // Ако вече сме в сектор
         if (trackingState.currentSectorId) {
           // Проверяваме дали все още сме в същия сектор
-          if (newSector && newSector.id === trackingState.currentSectorId) {
+          // Използваме по-голям threshold за изход за да избегнем фликер
+          const stillInSector = newSector && newSector.id === trackingState.currentSectorId;
+          const exitCheck = sectorsWithRoutes.find((sector: any) => {
+            if (!sector.active || sector.id !== trackingState.currentSectorId) return false;
+            const sectorCheck: SectorCheck = {
+              id: sector.id,
+              name: sector.name,
+              speedLimit: sector.speedLimit,
+              startPoint: sector.startPoint,
+              endPoint: sector.endPoint,
+              active: sector.active,
+              routeCoordinates: sector.routeCoordinates,
+              route: sector.routeCoordinates ? sector.routeCoordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })) : []
+            };
+            return isPointNearSector(location.coords, sectorCheck, PROXIMITY_THRESHOLD_EXIT);
+          });
+          
+          if (stillInSector || exitCheck) {
             // Все още сме в същия сектор - нулираме exit confirmations
             trackingState.exitConfirmations = 0;
-          } else if (!newSector) {
+          } else {
             // Може би излизаме от сектора
             trackingState.exitConfirmations++;
             
@@ -447,26 +514,17 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               // Излизаме от сектора
               const exitingSector = sectors.find(s => s.id === trackingState.currentSectorId);
               
-              // Изчисляваме средната скорост веднъж за всички случаи
-              const speedReadingsStr = await AsyncStorage.getItem('sector-speed-readings');
-              const speedReadings: number[] = speedReadingsStr ? JSON.parse(speedReadingsStr) : [];
-              const avgSpeed = speedReadings.length > 0 ? speedReadings.reduce((a, b) => a + b, 0) / speedReadings.length : 0;
+              // Изчисляваме средната скорост от memory cache
+              const avgSpeed = memSpeedReadings.length > 0 ? memSpeedReadings.reduce((a, b) => a + b, 0) / memSpeedReadings.length : 0;
               
               if (exitingSector) {
-                // Проверяваме настройките
-                const settingsStr = await AsyncStorage.getItem('app-settings');
-                const settings = settingsStr ? JSON.parse(settingsStr) : {
-                  notificationsEnabled: true,
-                  vibrationEnabled: true,
-                  soundEnabled: true
-                };
-                
-                const exceeded = avgSpeed > exitingSector.speedLimit;
+                // Използваме вече заредените настройки (кеширани по-горе)
+                const isExceeding = avgSpeed > exitingSector.speedLimit;
                 
                 // Вибрация само ако е включена
                 if (settings.vibrationEnabled) {
                   try {
-                    if (exceeded) {
+                    if (isExceeding) {
                       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
                     } else {
                       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -486,7 +544,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                   await Notifications.scheduleNotificationAsync({
                     content: {
                       title: `✅ Край на сектор`,
-                      body: `📍 ${exitingSector.name}\n📊 Средна скорост: ${avgSpeed.toFixed(1)} км/ч\n${avgSpeed > exitingSector.speedLimit ? '⚠️ Превишена средна скорост!' : '✅ В рамките на ограничението'}`,
+                      body: `📍 ${exitingSector.name}\n📊 Средна скорост: ${avgSpeed.toFixed(1)} км/ч\n${isExceeding ? '⚠️ Превишена средна скорост!' : '✅ В рамките на ограничението'}`,
                       data: { 
                         sectorId: exitingSector.id,
                         type: 'sector-exit',
@@ -506,10 +564,32 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                   
                   // Запазваме времето за debounce
                   trackingState.lastNotificationTime[exitNotificationKey] = now;
+                  shouldSaveTrackingState = true;
                 }
 
                 console.log(`Exited sector ${exitingSector.name} with avg speed ${avgSpeed.toFixed(1)} km/h`);
               }
+              
+              // Изчистваме данните
+              await AsyncStorage.removeItem('current-sector');
+              await AsyncStorage.removeItem('sector-entry-time');
+              await AsyncStorage.removeItem('sector-speed-readings');
+              await AsyncStorage.removeItem('sector-monitor-data');
+              
+              // Изчистваме memory cache
+              memSpeedReadings = [];
+              
+              const exitingSectorId = trackingState.currentSectorId;
+              trackingState.currentSectorId = null;
+              trackingState.exitConfirmations = 0;
+              trackingState.warnedSectors = trackingState.warnedSectors.filter(id => id !== exitingSectorId);
+              
+              // Ресетваме флага за средна скорост при излизане от сектор
+              if (exitingSector && trackingState.hasNotifiedAverageSpeedExceeded[exitingSector.id]) {
+                delete trackingState.hasNotifiedAverageSpeedExceeded[exitingSector.id];
+              }
+              
+              shouldSaveTrackingState = true; // Запазваме промяната
               
               // Записваме нарушението в базата данни ако имаме device ID
               try {
@@ -565,21 +645,6 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                 // Don't throw error to avoid breaking the flow
               }
               
-              // Изчистваме данните
-              await AsyncStorage.removeItem('current-sector');
-              await AsyncStorage.removeItem('sector-entry-time');
-              await AsyncStorage.removeItem('sector-speed-readings');
-              await AsyncStorage.removeItem('sector-monitor-data');
-              
-              const prevId = trackingState.currentSectorId;
-              trackingState.currentSectorId = null;
-              trackingState.exitConfirmations = 0;
-              trackingState.warnedSectors = trackingState.warnedSectors.filter(id => id !== prevId);
-              
-              // Ресетваме флага за средна скорост при излизане от сектор
-              if (exitingSector && trackingState.hasNotifiedAverageSpeedExceeded[exitingSector.id]) {
-                delete trackingState.hasNotifiedAverageSpeedExceeded[exitingSector.id];
-              }
             }
           }
         } else if (!trackingState.currentSectorId && newSector) {
@@ -605,11 +670,14 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             
             await AsyncStorage.setItem('current-sector', JSON.stringify(sectorToStore));
             await AsyncStorage.setItem('sector-entry-time', entryTime.toString());
-            await AsyncStorage.setItem('sector-speed-readings', JSON.stringify([speed]));
+            
+            // Инициализираме memory cache за speed readings
+            memSpeedReadings = [speed];
             
             trackingState.currentSectorId = newSector.id;
             trackingState.entryConfirmations = {};
             trackingState.exitConfirmations = 0;
+            shouldSaveTrackingState = true;
             
             // Използваме вече заредените настройки (кеширани по-горе)
             // settings вече са заредени в началото на тика
@@ -654,27 +722,27 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               
               // Запазваме времето за debounce
               trackingState.lastNotificationTime[entryNotificationKey] = now;
+              shouldSaveTrackingState = true;
             }
             
             console.log(`Entered sector ${newSector.name} with speed ${speed.toFixed(1)} km/h`);
           }
         }
-        
-        // Запазваме състоянието
-        await AsyncStorage.setItem('sector-tracking-state', JSON.stringify(trackingState));
 
         // Ако сме в сектор, обновяваме скоростта и проверяваме за нарушения
         if (trackingState.currentSectorId) {
           const activeSector = sectors.find(s => s.id === trackingState.currentSectorId);
           if (!activeSector) return;
-          const speedReadingsStr = await AsyncStorage.getItem('sector-speed-readings');
-          const speedReadings: number[] = speedReadingsStr ? JSON.parse(speedReadingsStr) : [];
-          const newReadings = [...speedReadings, speed];
           
-          await AsyncStorage.setItem('sector-speed-readings', JSON.stringify(newReadings));
+          // Добавяме скоростта в rolling window (memory cache)
+          memSpeedReadings.push(speed);
+          // Ограничаваме размера на буфера (rolling window ~60s при 1Hz)
+          if (memSpeedReadings.length > MAX_SPEED_READINGS) {
+            memSpeedReadings.shift();
+          }
           
           // Изчисляваме средна скорост
-          const avgSpeed = newReadings.reduce((a, b) => a + b, 0) / newReadings.length;
+          const avgSpeed = memSpeedReadings.length > 0 ? memSpeedReadings.reduce((a, b) => a + b, 0) / memSpeedReadings.length : 0;
           
           // Изчисляваме оставащо разстояние
           // Използваме реалния маршрут ако е наличен
@@ -696,8 +764,16 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           const entryTime = entryTimeStr ? parseInt(entryTimeStr) : Date.now();
           const timeInSector = Math.floor((Date.now() - entryTime) / 1000);
           
-          // Изчисляваме препоръчителна скорост (с timeInSector за правилна компенсация)
-          const recommendedSpeed = calculateRecommendedSpeed(avgSpeed, remainingDistance, activeSector.speedLimit, timeInSector);
+          // Изчисляваме изминато разстояние за recommended speed
+          const distanceSoFar = (avgSpeed / 3.6) * timeInSector; // метри
+          
+          // Използваме shared функцията за препоръчителна скорост
+          const recommendedSpeed = computeRecommendedSpeedKmH(
+            avgSpeed,
+            activeSector.speedLimit,
+            distanceSoFar,
+            remainingDistance
+          );
           
           const monitorData = {
             sectorName: activeSector.name,
@@ -709,7 +785,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             recommendedSpeed,
             isOverSpeed: avgSpeed > activeSector.speedLimit,
             entryTime,
-            speedReadings: newReadings
+            speedReadings: [...memSpeedReadings] // копие на масива
           };
           
           await AsyncStorage.setItem('sector-monitor-data', JSON.stringify(monitorData));
@@ -719,15 +795,8 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           const isExceeding = avgSpeed > activeSector.speedLimit;
           
           // Ако превишаваме и не сме изпратили нотификация - изпращаме
+          // Използваме вече заредените настройки (кеширани по-горе)
           if (isExceeding && !hasNotified) {
-            // Проверяваме настройките преди да изпратим известие
-            const settingsStr = await AsyncStorage.getItem('app-settings');
-            const settings = settingsStr ? JSON.parse(settingsStr) : {
-              notificationsEnabled: true,
-              vibrationEnabled: true,
-              soundEnabled: true
-            };
-            
             if (settings.notificationsEnabled) {
               const warningBody = recommendedSpeed && recommendedSpeed > 0
                 ? `📊 Средна: ${avgSpeed.toFixed(1)} км/ч\n💡 Намалете до ${recommendedSpeed.toFixed(0)} км/ч за компенсация`
@@ -757,19 +826,23 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               
               // Сетваме флага - изпратена нотификация
               trackingState.hasNotifiedAverageSpeedExceeded[activeSector.id] = true;
+              shouldSaveTrackingState = true;
             }
           } else if (!isExceeding && hasNotified) {
             // Ако вече не превишаваме и сме изпратили нотификация - ресетваме флага
             trackingState.hasNotifiedAverageSpeedExceeded[activeSector.id] = false;
+            shouldSaveTrackingState = true;
           }
           
           // Маркираме че трябва да запазим състоянието
           shouldSaveTrackingState = true;
         }
 
-        // Запазваме trackingState само ако е променено (веднъж на тик)
+        // Flush-ваме memory cache към AsyncStorage (периодично или при промяна)
         if (shouldSaveTrackingState) {
-          await AsyncStorage.setItem('sector-tracking-state', JSON.stringify(trackingState));
+          await flushStateToStorage(true); // Force flush при промяна
+        } else {
+          await flushStateToStorage(false); // Периодичен flush
         }
         
         console.log(`🚀 MAX ACCURACY GPS: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}, Speed: ${speed.toFixed(1)} km/h, Accuracy: ${location.coords.accuracy?.toFixed(1)}m`);

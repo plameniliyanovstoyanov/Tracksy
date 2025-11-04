@@ -1,13 +1,17 @@
 import { create } from 'zustand';
 import { combine } from 'zustand/middleware';
 import { sectors as initialSectors, Sector } from '@/data/sectors';
-import * as Notifications from 'expo-notifications';
-import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 import { fetchSectorRoute } from '@/utils/mapbox-directions';
 import { trpcClient } from '@/lib/trpc';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getNotificationSettings } from './settings-store';
+import {
+  PROXIMITY_THRESHOLD_ENTER,
+  PROXIMITY_THRESHOLD_EXIT,
+  WARNING_DISTANCE_M,
+  ROUTE_SNAP_THRESHOLD_M,
+} from '@/constants/proximity';
+import { computeRecommendedSpeedKmH } from '@/utils/speed-calculations';
 
 interface Location {
   latitude: number;
@@ -58,7 +62,7 @@ interface SectorActions {
   checkSectorEntry: (location: Location) => Promise<void>;
   checkSectorExit: (location: Location, deviceId?: string) => Promise<void>;
   updateSectorSpeed: (speed: number) => void;
-  updateSectorProgress: (location: Location) => void;
+  updateSectorProgress: (location: Location) => Promise<void>;
   loadSectorRoutes: (maxRetries?: number) => Promise<void>;
   reloadSectorRoutes: () => Promise<void>; // Force reload routes (clears cache)
   loadFromStorage: () => Promise<void>;
@@ -118,7 +122,7 @@ function distanceToLineSegment(point: Location, lineStart: [number, number], lin
 }
 
 // Проверка дали точка е близо до линия от сектор
-function isPointNearSector(point: Location, sector: SectorWithRoute, threshold: number = 50): boolean {
+function isPointNearSector(point: Location, sector: SectorWithRoute, threshold: number = PROXIMITY_THRESHOLD_ENTER): boolean {
   // Check if we have route coordinates
   if (sector.routeCoordinates && sector.routeCoordinates.length > 1) {
     // Проверяваме разстоянието до всеки сегмент от маршрута
@@ -152,7 +156,7 @@ function isPointNearSector(point: Location, sector: SectorWithRoute, threshold: 
 }
 
 // Проверка дали се приближаваме към сектор по правилния път (за известия)
-function isApproachingSectorOnRoute(point: Location, sector: SectorWithRoute, warningDistance: number = 500): boolean {
+function isApproachingSectorOnRoute(point: Location, sector: SectorWithRoute, warningDistance: number = WARNING_DISTANCE_M): boolean {
   // Първо проверяваме дали сме близо до началото на сектора
   const distToStart = getDistance(point.latitude, point.longitude, sector.startPoint.lat, sector.startPoint.lng);
   
@@ -194,8 +198,8 @@ function isApproachingSectorOnRoute(point: Location, sector: SectorWithRoute, wa
       }
     }
     
-    // Трябва да сме близо до маршрута (в рамките на 100м) и на правилния път
-    return minDistanceToRoute < 100 && isOnApproachPath;
+    // Трябва да сме близо до маршрута (в рамките на ROUTE_SNAP_THRESHOLD_M) и на правилния път
+    return minDistanceToRoute < ROUTE_SNAP_THRESHOLD_M && isOnApproachPath;
   } else {
     // Ако няма маршрут, проверяваме дали сме на въображаемата линия между началото и края
     const distanceToSectorLine = distanceToLineSegment(
@@ -204,9 +208,9 @@ function isApproachingSectorOnRoute(point: Location, sector: SectorWithRoute, wa
       [sector.endPoint.lng, sector.endPoint.lat]
     );
     
-    // Трябва да сме близо до линията на сектора (в рамките на 100м)
+    // Трябва да сме близо до линията на сектора (в рамките на ROUTE_SNAP_THRESHOLD_M)
     // и в предупредителната зона около началото
-    return distanceToSectorLine < 100 && distToStart < warningDistance && distToStart > 50;
+    return distanceToSectorLine < ROUTE_SNAP_THRESHOLD_M && distToStart < warningDistance && distToStart > 50;
   }
 }
 
@@ -257,8 +261,9 @@ export const useSectorStore = create(
         
         try {
           // Проверяваме дали сме в някой сектор
+          // UI store използва същите прагове като BG task
           const newSector = sectors.find(sector => 
-            sector.active && isPointNearSector(location, sector, 50) // Строг threshold - само когато сме РЕАЛНО в сектора
+            sector.active && isPointNearSector(location, sector, PROXIMITY_THRESHOLD_ENTER)
           );
 
           // Ако вече сме в сектор, не правим нищо
@@ -313,45 +318,8 @@ export const useSectorStore = create(
                 lastSpeedUpdateTime: Date.now()
               });
               
-              // Изпращаме известие ако е разрешено и не сме изпратили такова за този сектор в последните 5 секунди
-              const shouldSendNotification = now - lastEntryNotificationTime >= NOTIFICATION_DEBOUNCE_MS || 
-                                            lastEntryNotificationSectorId !== newSector.id;
-              
-              if (Platform.OS !== 'web' && shouldSendNotification) {
-                const settings = await getNotificationSettings();
-                
-                // Вибрация само ако е включена в настройките
-                if (settings.vibrationEnabled) {
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-                }
-                
-                // Известие само ако е включено в настройките
-                if (settings.notificationsEnabled) {
-                  Notifications.scheduleNotificationAsync({
-                    content: {
-                      title: `🚗 Влязохте в сектор: ${newSector.name}`,
-                      body: `⚠️ Ограничение: ${newSector.speedLimit} км/ч`,
-                      data: { sectorId: newSector.id, type: 'sector-entry' },
-                    sound: settings.soundEnabled ? 'default' : false,
-                    vibrate: settings.vibrationEnabled ? [0, 300, 200, 300] : undefined,
-                    ...(Platform.OS === 'android' && {
-                      priority: Notifications.AndroidNotificationPriority.MAX,
-                      channelId: 'tracksy-alerts',
-                    }),
-                    ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
-                  },
-                    trigger: null,
-                  }).catch(error => {
-                    console.error('Failed to send notification:', error);
-                  });
-                  
-                  // Запазваме времето и ID на сектора за debounce
-                  set({ 
-                    lastEntryNotificationTime: now,
-                    lastEntryNotificationSectorId: newSector.id
-                  });
-                }
-              }
+              // NOTIFICATIONS: Само BG task праща нотификации за entry/exit
+              // UI store само синхронизира състоянието и показва overlay
             } else {
               // Увеличаваме брояча
               set({ sectorConfirmationCount: newCount, lastSectorCheckTime: now });
@@ -384,7 +352,8 @@ export const useSectorStore = create(
 
         try {
           // Проверяваме дали все още сме в сектора
-          const stillInSector = isPointNearSector(location, currentSector as SectorWithRoute, 120); // По-голям threshold за излизане
+          // Използваме по-голям threshold за излизане за да избегнем фликер
+          const stillInSector = isPointNearSector(location, currentSector as SectorWithRoute, PROXIMITY_THRESHOLD_EXIT);
 
           // Ако все още сме в сектора
           if (stillInSector) {
@@ -423,50 +392,8 @@ export const useSectorStore = create(
               });
             }
             
-            // Изпращаме известие ако е разрешено и не сме изпратили такова за този сектор в последните 5 секунди
-            const shouldSendNotification = now - lastExitNotificationTime >= NOTIFICATION_DEBOUNCE_MS || 
-                                          lastExitNotificationSectorId !== currentSector.id;
-            
-            if (Platform.OS !== 'web' && shouldSendNotification) {
-              const settings = await getNotificationSettings();
-              const exceeded = currentSectorAverageSpeed > currentSector.speedLimit;
-              
-              // Вибрация само ако е включена в настройките
-              if (settings.vibrationEnabled) {
-                if (exceeded) {
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-                } else {
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                }
-              }
-              
-              // Известие само ако е включено в настройките
-              if (settings.notificationsEnabled) {
-                Notifications.scheduleNotificationAsync({
-                  content: {
-                    title: `✅ Излязохте от сектор: ${currentSector.name}`,
-                    body: `📊 Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n${exceeded ? '⚠️ Превишена средна скорост!' : '✅ В рамките на ограничението'}`,
-                    data: { sectorId: currentSector.id, type: 'sector-exit', exceeded },
-                    sound: settings.soundEnabled ? 'default' : false,
-                    vibrate: settings.vibrationEnabled ? [0, 300, 200, 300] : undefined,
-                    ...(Platform.OS === 'android' && {
-                      priority: Notifications.AndroidNotificationPriority.MAX,
-                      channelId: 'tracksy-alerts',
-                    }),
-                    ...(Platform.OS === 'ios' && { interruptionLevel: 'timeSensitive' }),
-                  },
-                  trigger: null,
-                }).catch(error => {
-                  console.error('Failed to send notification:', error);
-                });
-                
-                // Запазваме времето и ID на сектора за debounce
-                set({ 
-                  lastExitNotificationTime: now,
-                  lastExitNotificationSectorId: currentSector.id
-                });
-              }
-            }
+            // NOTIFICATIONS: Само BG task праща нотификации за exit
+            // UI store само синхронизира състоянието
             
             set({ 
               currentSector: null, 
@@ -551,7 +478,7 @@ export const useSectorStore = create(
         }
       },
 
-      updateSectorProgress: (location: Location) => {
+      updateSectorProgress: async (location: Location) => {
         const state = get();
         const { currentSector, sectorTotalDistance, lastNotificationThreshold, distanceTraveled } = state;
         
@@ -639,37 +566,8 @@ export const useSectorStore = create(
             const { currentSectorAverageSpeed, recommendedSpeed } = state;
             const isExceeding = currentSectorAverageSpeed > currentSector.speedLimit;
             
-            if (Platform.OS !== 'web') {
-              let notificationBody = '';
-              
-              if (isExceeding) {
-                notificationBody = `⚠️ Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n` +
-                  `Превишавате с ${(currentSectorAverageSpeed - currentSector.speedLimit).toFixed(1)} км/ч!\n` +
-                  `Препоръчителна скорост: ${recommendedSpeed ? `≤${recommendedSpeed.toFixed(0)} км/ч` : 'Намалете!'}`;
-              } else {
-                notificationBody = `✅ Средна скорост: ${currentSectorAverageSpeed.toFixed(1)} км/ч\n` +
-                  `Всичко е наред - под лимита сте`;
-              }
-              
-              Notifications.scheduleNotificationAsync({
-                content: {
-                  title: `На половината от сектор ${currentSector.name}`,
-                  body: notificationBody,
-                  data: { 
-                    sectorId: currentSector.id,
-                    progress: threshold,
-                    isExceeding,
-                    averageSpeed: currentSectorAverageSpeed,
-                    recommendedSpeed
-                  },
-                  sound: true,
-                  vibrate: [0, 250, 250, 250],
-                },
-                trigger: null,
-              }).catch(error => {
-                console.error('Failed to send progress notification:', error);
-              });
-            }
+            // NOTIFICATIONS: 50% progress нотификацията се праща от BG task
+            // UI store само обновява прогреса
             
             set({ lastNotificationThreshold: threshold });
           }
