@@ -1,6 +1,7 @@
 import Expo
 import React
 import ReactAppDependencyProvider
+import MapboxMaps
 
 @UIApplicationMain
 public class AppDelegate: ExpoAppDelegate {
@@ -13,6 +14,11 @@ public class AppDelegate: ExpoAppDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // Initialize Mapbox with access token from Info.plist or runtime
+    if let accessToken = Bundle.main.object(forInfoDictionaryKey: "MBXAccessToken") as? String {
+      MapboxOptions.accessToken = accessToken
+    }
+    
     let delegate = ReactNativeDelegate()
     let factory = ExpoReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()

@@ -114,14 +114,26 @@ export async function fetchSectorRoute(sector: Sector): Promise<[number, number]
         console.log(`🚗 Fetching route for ${sector.name} using ${profile} profile`);
         console.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
         console.log(`📍 To: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
+        console.log(`🔗 URL: ${url.substring(0, 100)}... (token hidden)`);
+        console.log(`🔑 Token available: ${MAPBOX_TOKEN ? 'YES' : 'NO'}, length: ${MAPBOX_TOKEN?.length || 0}`);
         
         // Use fetch with 10 second timeout to give more time for route calculation
-        const response = await fetchWithTimeout(url, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-          },
-        }, 10000);
+        let response: Response;
+        try {
+          response = await fetchWithTimeout(url, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+            },
+          }, 10000);
+        } catch (fetchError: any) {
+          console.error(`❌ Fetch error for ${sector.name} (${profile}):`, {
+            message: fetchError?.message,
+            name: fetchError?.name,
+            stack: fetchError?.stack?.substring(0, 200),
+          });
+          throw fetchError;
+        }
         
         console.log(`📡 Response status for ${profile}: ${response.status}`);
         

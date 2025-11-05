@@ -36,3 +36,6 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 .vercel
+
+# Mapbox secret tokens (never commit these!)
+.netrc

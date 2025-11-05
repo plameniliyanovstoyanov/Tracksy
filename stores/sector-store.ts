@@ -601,6 +601,9 @@ export const useSectorStore = create(
         try {
           console.log(`🔄 Loading sector routes from Mapbox... (attempt ${4 - maxRetries}/3)`);
           
+          // Get current sectors from state (may be loaded from backend or local)
+          const { sectors: currentSectors } = get();
+          
           // Check if we have environment loaded
           const { ENV } = await import('@/utils/env');
           if (!ENV.mapboxToken || ENV.mapboxToken === '') {
@@ -638,12 +641,22 @@ export const useSectorStore = create(
           const batchSize = 5;
           const loadedSectors: SectorWithRoute[] = [];
           
-          for (let i = 0; i < initialSectors.length; i += batchSize) {
-            const batch = initialSectors.slice(i, i + batchSize);
+          // Use sectors from state instead of initialSectors
+          const sectorsToProcess = currentSectors.length > 0 ? currentSectors : initialSectors;
+          
+          for (let i = 0; i < sectorsToProcess.length; i += batchSize) {
+            const batch = sectorsToProcess.slice(i, i + batchSize);
             console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1} (${batch.length} sectors)...`);
             
             const batchResults = await Promise.allSettled(
               batch.map(async (sector) => {
+                // Skip if route already exists
+                const sectorWithRoute = sector as SectorWithRoute;
+                if (sectorWithRoute.routeCoordinates && sectorWithRoute.routeCoordinates.length > 2) {
+                  console.log(`⏭️ Skipping ${sector.name} - route already loaded`);
+                  return sectorWithRoute;
+                }
+                
                 try {
                   console.log(`🚗 Fetching route for sector ${sector.name}...`);
                   console.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
@@ -656,11 +669,11 @@ export const useSectorStore = create(
                     return { ...sector, routeCoordinates: route } as SectorWithRoute;
                   } else {
                     console.error(`❌ Failed to load route for ${sector.name} after retries`);
-                    return { ...sector, routeCoordinates: undefined } as SectorWithRoute;
+                    return { ...sector, routeCoordinates: sectorWithRoute.routeCoordinates } as SectorWithRoute;
                   }
                 } catch (error) {
                   console.error(`❌ Error loading route for ${sector.name}:`, error);
-                  return { ...sector, routeCoordinates: undefined } as SectorWithRoute;
+                  return { ...sector, routeCoordinates: sectorWithRoute.routeCoordinates } as SectorWithRoute;
                 }
               })
             );
@@ -673,13 +686,13 @@ export const useSectorStore = create(
                 console.error(`❌ Promise rejected for sector ${batch[idx].name}:`, result.reason);
                 loadedSectors.push({
                   ...batch[idx],
-                  routeCoordinates: undefined
+                  routeCoordinates: (batch[idx] as SectorWithRoute).routeCoordinates
                 } as SectorWithRoute);
               }
             });
             
             // Small delay between batches to avoid rate limiting
-            if (i + batchSize < initialSectors.length) {
+            if (i + batchSize < sectorsToProcess.length) {
               await new Promise(resolve => setTimeout(resolve, 500));
             }
           }
@@ -688,7 +701,7 @@ export const useSectorStore = create(
           const successCount = loadedSectors.filter(s => s.routeCoordinates && s.routeCoordinates.length > 2).length;
           const pendingCount = loadedSectors.length - successCount;
           
-          console.log(`✅ Loaded ${successCount}/${initialSectors.length} sector routes successfully`);
+          console.log(`✅ Loaded ${successCount}/${sectorsToProcess.length} sector routes successfully`);
           
           if (pendingCount > 0 && maxRetries > 0) {
             console.log(`⏳ ${pendingCount} sectors failed - retrying in 2 seconds...`);
@@ -716,9 +729,10 @@ export const useSectorStore = create(
         } catch (error) {
           console.error('❌ Error loading sector routes:', error);
           // Don't create fallback - leave sectors without routeCoordinates so they can be loaded later
-          const sectorsWithoutRoutes = initialSectors.map(sector => ({
+          const { sectors: currentSectors } = get();
+          const sectorsWithoutRoutes = (currentSectors.length > 0 ? currentSectors : initialSectors).map(sector => ({
             ...sector,
-            routeCoordinates: undefined
+            routeCoordinates: (sector as SectorWithRoute).routeCoordinates
           } as SectorWithRoute));
           set({ sectors: sectorsWithoutRoutes });
           console.log('⏳ Sectors initialized without routes - will load routes on next attempt');
@@ -727,21 +741,44 @@ export const useSectorStore = create(
 
       loadFromStorage: async () => {
         try {
-          console.log('Loading sectors from storage...');
-          // For now, just initialize with default sectors
-          // In the future, this could load custom sectors from AsyncStorage
-          set({ sectors: initialSectors });
+          console.log('Loading sectors from backend...');
+          
+          // Try to load sectors from backend first
+          try {
+            const result = await trpcClient.sectors.list.query();
+            
+            if (result && result.sectors && result.sectors.length > 0) {
+              console.log(`✅ Loaded ${result.sectors.length} sectors from backend`);
+              set({ sectors: result.sectors as SectorWithRoute[] });
+              
+              // Load routes in the background (don't wait for it)
+              const actions = get() as SectorState & SectorActions;
+              actions.loadSectorRoutes().catch(error => {
+                console.error('Failed to load sector routes in background:', error);
+              });
+              console.log('✅ Sectors initialized from backend, routes loading in background');
+              return;
+            } else {
+              console.warn('⚠️ Backend returned empty sectors array, falling back to local sectors');
+            }
+          } catch (backendError) {
+            console.warn('⚠️ Failed to load sectors from backend, falling back to local sectors:', backendError);
+          }
+          
+          // Fallback to local sectors if backend fails or returns empty
+          console.log('Using local sectors as fallback...');
+          set({ sectors: initialSectors as SectorWithRoute[] });
           
           // Load routes in the background (don't wait for it)
           const actions = get() as SectorState & SectorActions;
           actions.loadSectorRoutes().catch(error => {
             console.error('Failed to load sector routes in background:', error);
           });
-          console.log('✅ Sectors initialized, routes loading in background');
+          console.log('✅ Sectors initialized from local data, routes loading in background');
         } catch (error) {
-          console.error('Failed to load sectors from storage:', error);
-          // Fallback to default sectors
-          set({ sectors: initialSectors });
+          console.error('Failed to load sectors:', error);
+          // Final fallback to default sectors
+          set({ sectors: initialSectors as SectorWithRoute[] });
         }
       },
       
@@ -802,12 +839,12 @@ export const useSectorStore = create(
             console.log('  - currentSectorData:', currentSectorData);
             console.log('  - monitorData:', monitorData);
             
-            const sector = initialSectors.find(s => s.id === currentSectorData.id);
+            const state = get();
+            // Try to find sector from state first (may be loaded from backend), fallback to initialSectors
+            const sector = state.sectors.find(s => s.id === currentSectorData.id) || initialSectors.find(s => s.id === currentSectorData.id);
             
             if (sector) {
               console.log('✅ Syncing with background task - sector found:', sector.name);
-              
-              const state = get();
               
               if (!state.currentSector || state.currentSector.id !== sector.id) {
                 console.log('🆕 Setting current sector from background task:', sector.name);

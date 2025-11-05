@@ -3,6 +3,7 @@ import hiRoute from "./routes/example/hi/route";
 import saveViolationRoute from "./routes/violations/save/route";
 import getViolationHistoryRoute from "./routes/violations/history/route";
 import getViolationStatsRoute from "./routes/violations/stats/route";
+import getSectorsListRoute from "./routes/sectors/list/route";
 
 export const appRouter = createTRPCRouter({
   example: createTRPCRouter({
@@ -12,6 +13,9 @@ export const appRouter = createTRPCRouter({
     save: saveViolationRoute,
     history: getViolationHistoryRoute,
     stats: getViolationStatsRoute,
+  }),
+  sectors: createTRPCRouter({
+    list: getSectorsListRoute,
   }),
 });
 
