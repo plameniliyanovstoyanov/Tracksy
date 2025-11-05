@@ -3,6 +3,7 @@
 # CI Pre-Xcodebuild Script for Xcode Cloud
 # This script runs before Xcode build to install dependencies
 
+# Exit on error for critical steps
 set -e
 
 echo "🔧 Running pre-build script for Xcode Cloud..."
@@ -23,13 +24,14 @@ fi
 
 echo "✅ Podfile found"
 
-# Check if we need to install Node.js dependencies first
-if [ -f "../package.json" ]; then
-    echo "📦 Installing Node.js dependencies..."
+# Node.js dependencies should be installed in ci_post_clone.sh
+# But check if they exist, if not try to install
+if [ ! -d "../node_modules" ] && [ -f "../package.json" ]; then
+    echo "⚠️ node_modules not found, trying to install..."
     cd "${CI_WORKSPACE}"
     
     if command -v npm &> /dev/null; then
-        npm install
+        npm install || echo "⚠️ npm install failed, continuing anyway..."
     else
         echo "⚠️ npm not found, skipping Node.js dependencies"
     fi
