@@ -60,14 +60,14 @@ interface SectorState {
 interface SectorActions {
   initializeNotifications: () => Promise<void>;
   checkSectorEntry: (location: Location) => Promise<void>;
-  checkSectorExit: (location: Location, deviceId?: string) => Promise<void>;
+  checkSectorExit: (location: Location, deviceId?: string, userId?: string) => Promise<void>;
   updateSectorSpeed: (speed: number) => void;
   updateSectorProgress: (location: Location) => Promise<void>;
   loadSectorRoutes: (maxRetries?: number) => Promise<void>;
   reloadSectorRoutes: () => Promise<void>; // Force reload routes (clears cache)
   loadFromStorage: () => Promise<void>;
   addToHistory: (entry: SectorHistoryEntry) => void;
-  saveViolationToDatabase: (entry: SectorHistoryEntry, location: Location, deviceId: string) => Promise<void>;
+  saveViolationToDatabase: (entry: SectorHistoryEntry, location: Location, deviceId: string, userId?: string) => Promise<void>;
   syncWithBackgroundTask: () => Promise<void>;
 }
 
@@ -335,7 +335,7 @@ export const useSectorStore = create(
         }
       },
 
-      checkSectorExit: async (location: Location, deviceId?: string) => {
+      checkSectorExit: async (location: Location, deviceId?: string, userId?: string) => {
         const state = get();
         const { currentSector, currentSectorAverageSpeed, exitConfirmationCount, lastSectorCheckTime, lastExitNotificationTime, lastExitNotificationSectorId } = state;
         
@@ -384,10 +384,10 @@ export const useSectorStore = create(
               duration
             };
             
-            // Записваме в базата данни ако имаме device ID
-            if (deviceId) {
+            // Записваме в базата данни ако имаме device ID или user ID
+            if (deviceId || userId) {
               const actions = get() as SectorState & SectorActions;
-              actions.saveViolationToDatabase(historyEntry, location, deviceId).catch(error => {
+              actions.saveViolationToDatabase(historyEntry, location, deviceId || '', userId).catch(error => {
                 console.error('Failed to save violation to database:', error);
               });
             }
@@ -789,9 +789,10 @@ export const useSectorStore = create(
         });
       },
       
-      saveViolationToDatabase: async (entry: SectorHistoryEntry, location: Location, deviceId: string) => {
+      saveViolationToDatabase: async (entry: SectorHistoryEntry, location: Location, deviceId: string, userId?: string) => {
         try {
           console.log('Saving violation to database:', {
+            userId,
             deviceId,
             sectorId: entry.sectorId,
             sectorName: entry.sectorName,
@@ -803,7 +804,8 @@ export const useSectorStore = create(
           });
           
           const result = await trpcClient.violations.save.mutate({
-            device_id: deviceId,
+            user_id: userId || undefined,
+            device_id: !userId ? deviceId : undefined, // Only use device_id if no user_id
             sector_id: entry.sectorId,
             sector_name: entry.sectorName,
             speed_limit: entry.speedLimit,
@@ -814,6 +816,7 @@ export const useSectorStore = create(
               longitude: location.longitude,
             },
             timestamp: new Date(entry.timestamp).toISOString(),
+            duration: entry.duration,
           });
           
           console.log('Violation saved successfully:', result);

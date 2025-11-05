@@ -1,19 +1,69 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, CheckCircle, XCircle, Gauge, MapPin, Calendar } from 'lucide-react-native';
 import { useSectorStore } from '@/stores/sector-store';
+import { useAuth } from '@/stores/auth-store';
+import { trpcClient } from '@/lib/trpc';
 
 export default function HistoryScreen() {
-  const { sectorHistory } = useSectorStore();
+  const { sectorHistory: localHistory } = useSectorStore();
+  const { user, isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
+  const [dbHistory, setDbHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  
+  // Load history from database if user is authenticated
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!isAuthenticated || !user?.id) {
+        setDbHistory([]);
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        const result = await trpcClient.users.violations.query({
+          user_id: user.id,
+          limit: 100,
+          offset: 0,
+        });
+        
+        setDbHistory(result.violations || []);
+      } catch (error) {
+        console.error('Error loading history from database:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadHistory();
+  }, [isAuthenticated, user?.id]);
+  
+  // Merge local and database history, prefer database
+  const sectorHistory = useMemo(() => {
+    if (isAuthenticated && dbHistory.length > 0) {
+      // Convert database violations to local format
+      return dbHistory.map(v => ({
+        sectorId: v.sectorId,
+        sectorName: v.sectorName,
+        timestamp: new Date(v.timestamp).getTime(),
+        averageSpeed: v.currentSpeed,
+        speedLimit: v.speedLimit,
+        exceeded: v.violationType === 'speeding',
+        duration: v.duration || 0,
+      }));
+    }
+    return localHistory;
+  }, [dbHistory, localHistory, isAuthenticated]);
 
   const stats = useMemo(() => {
     const total = sectorHistory.length;
@@ -128,7 +178,12 @@ export default function HistoryScreen() {
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {sectorHistory.length === 0 ? (
+          {loading ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator size="large" color="#00ff88" />
+              <Text style={styles.emptyTitle}>Зареждане на история...</Text>
+            </View>
+          ) : sectorHistory.length === 0 ? (
             <View style={styles.emptyState}>
               <Clock color="#888" size={48} />
               <Text style={styles.emptyTitle}>Няма история</Text>

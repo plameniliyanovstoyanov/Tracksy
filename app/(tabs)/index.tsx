@@ -15,6 +15,7 @@ import { UnifiedSectorDisplay } from '@/components/UnifiedSectorDisplay';
 import { MapViewComponent } from '@/components/MapView';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { useDevice } from '@/stores/device-store';
+import { useAuth } from '@/stores/auth-store';
 
 export default function HomeScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -42,6 +43,8 @@ export default function HomeScreen() {
   
   const { deviceId } = useDevice();
 
+  const { user } = useAuth();
+  
   const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
     setLocation(location);
     let speed = location.coords.speed ? location.coords.speed * 3.6 : 0;
@@ -53,13 +56,15 @@ export default function HomeScreen() {
     updateSpeed(speed);
     
     checkSectorEntry(location.coords);
-    checkSectorExit(location.coords, deviceId || undefined);
+    // Get user ID from auth if available
+    const userId = user?.id;
+    checkSectorExit(location.coords, deviceId || undefined, userId);
     
     if (currentSector) {
       updateSectorSpeed(speed);
       updateSectorProgress(location.coords);
     }
-  }, [updateSpeed, updateSectorSpeed, updateSectorProgress, currentSector, checkSectorEntry, checkSectorExit, deviceId]);
+  }, [updateSpeed, updateSectorSpeed, updateSectorProgress, currentSector, checkSectorEntry, checkSectorExit, deviceId, user]);
 
   useEffect(() => {
     // Load routes on mount and reload periodically to ensure they're loaded
