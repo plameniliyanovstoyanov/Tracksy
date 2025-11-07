@@ -12,13 +12,13 @@ import {
 } from 'react-native';
 import { useAuth } from '@/stores/auth-store';
 import { useRouter } from 'expo-router';
-import { Mail, Chrome, Facebook, Zap, Shield } from 'lucide-react-native';
+import { Mail, Chrome, Zap, Shield } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen() {
-  const { signInWithGoogle, signInWithApple, signInWithFacebook, signInAsAdmin, loading } = useAuth();
+  const { signInWithGoogle, signInWithApple, signInAsAdmin, loading } = useAuth();
   const router = useRouter();
   
   // Animation values for light trails
@@ -80,10 +80,6 @@ export default function LoginScreen() {
     router.replace('/(tabs)');
   };
 
-  const handleFacebookSignIn = async () => {
-    await signInWithFacebook();
-    router.replace('/(tabs)');
-  };
 
   const handleAdminSignIn = () => {
     signInAsAdmin();
@@ -180,27 +176,9 @@ export default function LoginScreen() {
               </View>
             </TouchableOpacity>
 
-            {Platform.OS === 'ios' && (
-              <TouchableOpacity
-                style={styles.button}
-                onPress={handleAppleSignIn}
-                disabled={loading}
-                activeOpacity={0.8}
-              >
-                <LinearGradient
-                  colors={['rgba(0,255,136,0.1)', 'rgba(0,255,136,0.05)']}
-                  style={styles.buttonGradient}
-                />
-                <View style={styles.buttonContent}>
-                  <Mail size={22} color="#00FF88" />
-                  <Text style={styles.buttonText}>Влез с Apple</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity
               style={styles.button}
-              onPress={handleFacebookSignIn}
+              onPress={handleAppleSignIn}
               disabled={loading}
               activeOpacity={0.8}
             >
@@ -209,8 +187,8 @@ export default function LoginScreen() {
                 style={styles.buttonGradient}
               />
               <View style={styles.buttonContent}>
-                <Facebook size={22} color="#00FF88" />
-                <Text style={styles.buttonText}>Влез с Facebook</Text>
+                <Mail size={22} color="#00FF88" />
+                <Text style={styles.buttonText}>Влез с Apple</Text>
               </View>
             </TouchableOpacity>
 

@@ -1,6 +1,7 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 import * as AuthSession from 'expo-auth-session';
 import { ENV } from '../utils/env';
@@ -15,7 +16,7 @@ function getSupabaseClient(): SupabaseClient {
 
   try {
     // Use fallback values from ENV (which already has hardcoded fallbacks)
-    const supabaseUrl = ENV.supabaseUrl || 'https://ztlyoketfstcsjylvfyq.supabase.co';
+    const supabaseUrl = ENV.supabaseUrl || 'https://ztlyoketftsciylvfq.supabase.co';
     const supabaseAnonKey = ENV.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI';
 
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -41,7 +42,7 @@ function getSupabaseClient(): SupabaseClient {
     // Create a minimal client with fallback values to prevent crashes
     try {
       supabaseInstance = createClient(
-        'https://ztlyoketfstcsjylvfyq.supabase.co',
+        'https://ztlyoketftsciylvfq.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI',
         {
           auth: {
@@ -96,9 +97,57 @@ export const supabase = new Proxy({} as SupabaseClient, {
 });
 
 // Helper to get redirect URL for OAuth
-export const getRedirectUrl = () => {
-  const redirectTo = AuthSession.makeRedirectUri({
-    native: 'myapp://redirect',
-  });
+export const getRedirectUrl = (deepLink?: string) => {
+  // For mobile OAuth, we use Supabase callback URL
+  // Supabase will handle the OAuth flow and redirect to our deep link
+  const supabaseUrl = ENV.supabaseUrl || 'https://ztlyoketftsciylvfq.supabase.co';
+  
+  // Validate Supabase URL
+  if (!supabaseUrl.includes('ztlyoketftsciylvfq.supabase.co')) {
+    console.error('❌ WARNING: Supabase URL might be incorrect!');
+    console.error('   Expected: ztlyoketftsciylvfq.supabase.co');
+    console.error('   Got:', supabaseUrl);
+    console.error('   Please check Supabase Dashboard → Authentication → URL Configuration');
+  }
+  
+  // Ensure URL has protocol
+  const cleanUrl = supabaseUrl.startsWith('http') ? supabaseUrl : `https://${supabaseUrl}`;
+  let redirectTo = `${cleanUrl}/auth/v1/callback`;
+  
+  // If deep link is provided, add it as query parameter
+  // Supabase will redirect to this deep link after OAuth
+  if (deepLink) {
+    redirectTo += `?redirect_to=${encodeURIComponent(deepLink)}`;
+  }
+  
+  // Debug log
+  console.log('🔗 Redirect URL (Supabase callback):', redirectTo);
+  if (deepLink) {
+    console.log('ℹ️ Supabase will redirect to deep link after OAuth:', deepLink);
+  }
+  
   return redirectTo;
+};
+
+// Helper to get deep link for app redirect
+export const getDeepLink = () => {
+  // Use tracksy://auth/callback for OAuth redirects
+  // This is production-ready and works in Expo Go, development builds, and production
+  // The scheme "tracksy" is configured in app.config.js
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: 'tracksy',
+    preferLocalhost: false,
+  });
+  
+  // For OAuth, we want tracksy://auth/callback specifically
+  // AuthSession.makeRedirectUri might return tracksy:// or tracksy://auth/callback
+  // Let's ensure we use the correct path
+  const deepLink = redirectUri.includes('auth/callback') 
+    ? redirectUri 
+    : 'tracksy://auth/callback';
+  
+  console.log('🔗 Deep link (app redirect):', deepLink);
+  console.log('ℹ️ Using tracksy://auth/callback for OAuth (production-ready)');
+  
+  return deepLink;
 };

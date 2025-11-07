@@ -6,6 +6,7 @@ import getViolationStatsRoute from "./routes/violations/stats/route";
 import getSectorsListRoute from "./routes/sectors/list/route";
 import getUserProfileRoute from "./routes/users/profile/route";
 import getUserViolationsRoute from "./routes/users/violations/route";
+import { getSettings, saveSettings } from "./routes/users/settings/route";
 
 export const appRouter = createTRPCRouter({
   example: createTRPCRouter({
@@ -22,6 +23,10 @@ export const appRouter = createTRPCRouter({
   users: createTRPCRouter({
     profile: getUserProfileRoute,
     violations: getUserViolationsRoute,
+    settings: createTRPCRouter({
+      get: getSettings,
+      save: saveSettings,
+    }),
   }),
 });
 

@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import { sectors } from '../data/sectors';
 
 // Get Supabase credentials from environment or use defaults
-const supabaseUrl = process.env.SUPABASE_URL || 'https://ztlyoketfstcsjylvfyq.supabase.co';
+const supabaseUrl = process.env.SUPABASE_URL || 'https://ztlyoketftsciylvfq.supabase.co';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI';
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);

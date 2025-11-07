@@ -21,15 +21,28 @@ import { useRouter } from 'expo-router';
 export default function SettingsScreen() {
   const offlineStore = useOfflineStore();
   const batteryStore = useBatteryOptimization();
-  const { user, isAuthenticated, signOut } = useAuth();
+  const { user, isAuthenticated, signOut, loading } = useAuth();
   const router = useRouter();
+  const { loadFromStorage, saveToStorage } = useSettingsStore();
   
   React.useEffect(() => {
     offlineStore.initializeOfflineMode();
     if (Platform.OS !== 'web') {
       batteryStore.initializeBatteryOptimization();
     }
-  }, []);
+    
+    // Load settings from database if user is authenticated
+    if (isAuthenticated && user?.id) {
+      loadFromStorage(user.id).catch(err => {
+        console.error('Failed to load settings:', err);
+      });
+    } else {
+      // Load from local storage for anonymous users
+      loadFromStorage().catch(err => {
+        console.error('Failed to load settings:', err);
+      });
+    }
+  }, [isAuthenticated, user?.id]);
   
   const {
     notificationsEnabled,
@@ -44,6 +57,42 @@ export default function SettingsScreen() {
     toggleBackgroundTracking,
     toggleEarlyWarning,
   } = useSettingsStore();
+  
+  // Override toggle functions to save to database
+  const handleToggleNotifications = () => {
+    toggleNotifications();
+    if (isAuthenticated && user?.id) {
+      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+    }
+  };
+  
+  const handleToggleVibration = () => {
+    toggleVibration();
+    if (isAuthenticated && user?.id) {
+      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+    }
+  };
+  
+  const handleToggleSound = () => {
+    toggleSound();
+    if (isAuthenticated && user?.id) {
+      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+    }
+  };
+  
+  const handleToggleEarlyWarning = () => {
+    toggleEarlyWarning();
+    if (isAuthenticated && user?.id) {
+      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+    }
+  };
+  
+  const handleToggleBackgroundTracking = async () => {
+    await toggleBackgroundTracking();
+    if (isAuthenticated && user?.id) {
+      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+    }
+  };
   const insets = useSafeAreaInsets();
 
   const SettingItem = ({ 
@@ -144,9 +193,33 @@ export default function SettingsScreen() {
                   
                   <TouchableOpacity 
                     style={styles.logoutButton}
+                    disabled={loading}
                     onPress={async () => {
-                      await signOut();
-                      router.replace('/login');
+                      try {
+                        console.log('🚪 Logout button pressed');
+                        console.log('🔍 Current route:', router);
+                        
+                        // Sign out first
+                        await signOut();
+                        console.log('✅ Sign out completed');
+                        
+                        // Small delay to ensure state is updated
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                        
+                        // Navigate to login - use replace to prevent going back
+                        console.log('🔍 Attempting to navigate to /login...');
+                        // Dismiss any modals/tabs first, then navigate
+                        router.dismissAll();
+                        router.replace('/login');
+                        console.log('✅ Navigation command sent');
+                      } catch (error) {
+                        console.error('❌ Error during logout:', error);
+                        // Even if signOut fails, try to redirect to login
+                        setTimeout(() => {
+                          console.log('🔍 Fallback: attempting to navigate to /login...');
+                          router.replace('/login');
+                        }, 200);
+                      }
                     }}
                   >
                     <LogOut color="#ff4444" size={18} />
@@ -178,7 +251,7 @@ export default function SettingsScreen() {
               title="Известия"
               subtitle="Получавайте известия при влизане в сектор"
               value={notificationsEnabled}
-              onToggle={toggleNotifications}
+              onToggle={handleToggleNotifications}
             />
 
             <SettingItem
@@ -186,7 +259,7 @@ export default function SettingsScreen() {
               title="Вибрация"
               subtitle="Вибрация при известия"
               value={vibrationEnabled}
-              onToggle={toggleVibration}
+              onToggle={handleToggleVibration}
             />
 
             <SettingItem
@@ -194,7 +267,7 @@ export default function SettingsScreen() {
               title="Звук"
               subtitle="Звукови сигнали при известия"
               value={soundEnabled}
-              onToggle={toggleSound}
+              onToggle={handleToggleSound}
             />
           </View>
 
@@ -206,7 +279,7 @@ export default function SettingsScreen() {
               title="Ранни предупреждения"
               subtitle="Предупреждения преди влизане в сектор (като Waze)"
               value={earlyWarningEnabled}
-              onToggle={toggleEarlyWarning}
+              onToggle={handleToggleEarlyWarning}
             />
 
           </View>
@@ -270,7 +343,7 @@ export default function SettingsScreen() {
               title="Background режим"
               subtitle="Следи за сектори дори когато приложението е затворено"
               value={backgroundTrackingEnabled}
-              onToggle={toggleBackgroundTracking}
+              onToggle={handleToggleBackgroundTracking}
               status={backgroundTrackingActive ? 'Активен' : backgroundTrackingEnabled ? 'Стартира...' : undefined}
             />
           </View>
