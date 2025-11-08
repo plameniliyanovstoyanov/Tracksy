@@ -1,48 +1,56 @@
 #!/bin/sh
 
-# CI Post-Clone Script for Xcode Cloud
-# This script runs after cloning the repository to install dependencies
+set -euo pipefail
 
-# Don't exit on error - continue even if npm install fails
-set +e
+echo "✅ ci_post_clone.sh started"
 
-echo "🔧 Running post-clone script for Xcode Cloud..."
-echo "📂 CI_WORKSPACE: ${CI_WORKSPACE}"
-echo "📂 Current directory: $(pwd)"
+# 1) Node (ползвай nvm)
 
-# Navigate to project root
-if [ -n "${CI_WORKSPACE}" ]; then
-    cd "${CI_WORKSPACE}"
-    echo "📂 Changed to: $(pwd)"
-else
-    echo "⚠️ CI_WORKSPACE not set, using current directory"
+export NODE_VERSION="20"
+
+if [ -z "${NVM_DIR:-}" ]; then
+  export NVM_DIR="$HOME/.nvm"
 fi
 
-echo "📦 Installing Node.js dependencies..."
-
-# Check if npm is available
-if ! command -v npm &> /dev/null; then
-    echo "⚠️ npm not found, trying to find node..."
-    if command -v node &> /dev/null; then
-        echo "✅ node found, but npm not in PATH"
-        echo "📂 PATH: ${PATH}"
-    else
-        echo "❌ Neither npm nor node found!"
-        echo "⚠️ Continuing anyway - pods might need node_modules"
-    fi
-else
-    echo "✅ npm found: $(which npm)"
-    echo "✅ npm version: $(npm --version)"
-    
-    # Install Node.js dependencies
-    echo "🔨 Running npm install..."
-    npm install || {
-        echo "⚠️ npm install failed, but continuing..."
-    }
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 fi
 
-echo "✅ Post-clone script completed!"
+. "$NVM_DIR/nvm.sh"
 
-# Always exit successfully - npm install is optional
-exit 0
+nvm install "$NODE_VERSION"
+nvm use "$NODE_VERSION"
 
+node -v
+npm -v
+
+# 2) JS dependencies
+
+npm ci
+
+# 3) Ruby/Bundler/Pods
+
+gem install bundler -N
+
+bundle config set path 'vendor/bundle'
+
+bundle install --quiet
+
+cd ios
+
+# Ако проектът ти ползва use_frameworks! или свеж RN/Pods – пази --repo-update
+
+bundle exec pod install --repo-update
+
+cd ..
+
+# 4) .env за билд тайм променливи (ако app.config.js ги чете)
+
+cat > .env <<EOF
+EXPO_PUBLIC_SUPABASE_URL=${EXPO_PUBLIC_SUPABASE_URL:-}
+EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}
+EXPO_PUBLIC_MAPBOX_TOKEN=${EXPO_PUBLIC_MAPBOX_TOKEN:-}
+MAPBOX_DOWNLOADS_TOKEN=${MAPBOX_DOWNLOADS_TOKEN:-}
+EOF
+
+echo "✅ ci_post_clone.sh finished"
