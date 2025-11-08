@@ -35,8 +35,30 @@ else
   echo "⚠️ Node.js not available - continuing anyway"
 fi
 
+# Намиране на ios директорията
+# Скриптът се изпълнява от ios/ci_scripts/, така че ios/ е едно ниво нагоре
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "📂 Script directory: $SCRIPT_DIR"
+echo "📂 iOS directory: $IOS_DIR"
+
+# Проверка дали ios директорията съществува
+if [ ! -d "$IOS_DIR" ]; then
+  echo "❌ iOS directory not found: $IOS_DIR"
+  exit 1
+fi
+
+# Проверка дали Podfile съществува
+if [ ! -f "$IOS_DIR/Podfile" ]; then
+  echo "❌ Podfile not found in: $IOS_DIR"
+  exit 1
+fi
+
+echo "✅ Podfile found"
+
 # Единственото нужно за iOS Archive: Pods
-cd "$CI_WORKSPACE/ios"
+cd "$IOS_DIR"
 
 pod repo update
 pod install
