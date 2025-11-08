@@ -1,7 +1,5 @@
-#!/bin/sh
+#!/bin/zsh
 
-set -euo pipefail
+set -euxo pipefail
 
-echo "ℹ️ ci_pre_xcodebuild.sh: nothing to run"
-
-exit 0
+echo "ℹ️ ci_pre_xcodebuild.sh: no-op"
