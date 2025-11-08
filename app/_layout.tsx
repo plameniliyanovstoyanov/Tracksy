@@ -16,6 +16,10 @@ import { ViolationHistoryProvider } from "@/stores/violation-history-store";
 import { validateEnv } from "@/utils/env";
 import * as Notifications from 'expo-notifications';
 import { supabase } from "@/lib/supabase";
+import * as WebBrowser from 'expo-web-browser';
+
+// КРИТИЧНО: За Android да затваря таба след OAuth login
+WebBrowser.maybeCompleteAuthSession();
 
 // КРИТИЧНО: Настройка за foreground нотификации - иначе в app-foreground няма звук
 Notifications.setNotificationHandler({
@@ -87,10 +91,10 @@ function RootLayoutNav() {
   
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const loadSettings = useSettingsStore((state) => state.loadFromStorage);
-  // const segments = useSegments();
-  // const router = useRouter();
+  const segments = useSegments();
+  const router = useRouter();
   
-  console.log('🔍 RootLayoutNav rendered:', { isAuthenticated, hasUser: !!user, authLoading });
+  console.log('🔍 RootLayoutNav rendered:', { isAuthenticated, hasUser: !!user, authLoading, segments });
 
   // Load settings from database when user is authenticated
   useEffect(() => {
@@ -178,19 +182,28 @@ function RootLayoutNav() {
     };
   }, []);
 
-  // useEffect(() => {
-  //   if (loading) return;
+  // Auto-redirect based on auth state
+  useEffect(() => {
+    if (authLoading) {
+      console.log('⏳ Auth still loading, waiting...');
+      return;
+    }
 
-  //   const inAuthGroup = segments[0] === 'login';
+    const inAuthGroup = segments[0] === 'login';
+    const inTabsGroup = segments[0] === '(tabs)';
 
-  //   if (!isAuthenticated && !inAuthGroup) {
-  //     // Redirect to login if not authenticated
-  //     router.replace('/login');
-  //   } else if (isAuthenticated && inAuthGroup) {
-  //     // Redirect to tabs if authenticated and on login page
-  //     router.replace('/(tabs)');
-  //   }
-  // }, [isAuthenticated, segments, loading, router]);
+    console.log('🔍 Auth state check:', { isAuthenticated, inAuthGroup, inTabsGroup, segments });
+
+    if (!isAuthenticated && !inAuthGroup) {
+      // Redirect to login if not authenticated and not already on login
+      console.log('🔐 Not authenticated, redirecting to login...');
+      router.replace('/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      // Redirect to tabs if authenticated and on login page
+      console.log('✅ Authenticated, redirecting to tabs...');
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, segments, authLoading, router]);
 
   console.log('🔍 RootLayoutNav returning Stack navigator');
   

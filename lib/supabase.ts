@@ -16,7 +16,7 @@ function getSupabaseClient(): SupabaseClient {
 
   try {
     // Use fallback values from ENV (which already has hardcoded fallbacks)
-    const supabaseUrl = ENV.supabaseUrl || 'https://ztlyoketftsciylvfq.supabase.co';
+    const supabaseUrl = ENV.supabaseUrl || 'https://ztlyoketfstcsjylvfyq.supabase.co';
     const supabaseAnonKey = ENV.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI';
 
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -42,7 +42,7 @@ function getSupabaseClient(): SupabaseClient {
     // Create a minimal client with fallback values to prevent crashes
     try {
       supabaseInstance = createClient(
-        'https://ztlyoketftsciylvfq.supabase.co',
+        'https://ztlyoketfstcsjylvfyq.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI',
         {
           auth: {
@@ -100,12 +100,12 @@ export const supabase = new Proxy({} as SupabaseClient, {
 export const getRedirectUrl = (deepLink?: string) => {
   // For mobile OAuth, we use Supabase callback URL
   // Supabase will handle the OAuth flow and redirect to our deep link
-  const supabaseUrl = ENV.supabaseUrl || 'https://ztlyoketftsciylvfq.supabase.co';
+  const supabaseUrl = ENV.supabaseUrl || 'https://ztlyoketfstcsjylvfyq.supabase.co';
   
   // Validate Supabase URL
-  if (!supabaseUrl.includes('ztlyoketftsciylvfq.supabase.co')) {
+  if (!supabaseUrl.includes('ztlyoketfstcsjylvfyq.supabase.co')) {
     console.error('❌ WARNING: Supabase URL might be incorrect!');
-    console.error('   Expected: ztlyoketftsciylvfq.supabase.co');
+    console.error('   Expected: ztlyoketfstcsjylvfyq.supabase.co');
     console.error('   Got:', supabaseUrl);
     console.error('   Please check Supabase Dashboard → Authentication → URL Configuration');
   }

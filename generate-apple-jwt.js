@@ -50,6 +50,7 @@ function generateAppleClientSecret() {
     sign.end();
     
     // Използвай private key за подписване
+    // За ES256 (ECDSA) трябва да използваме правилния формат
     const signature = sign.sign(privateKey, 'base64');
     
     // Конвертирай от base64 към base64url

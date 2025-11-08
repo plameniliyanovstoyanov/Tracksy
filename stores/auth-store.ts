@@ -2,13 +2,11 @@ import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase, getRedirectUrl, getDeepLink } from '@/lib/supabase';
+import { supabase, getDeepLink } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 import * as AuthSession from 'expo-auth-session';
 
 import * as WebBrowser from 'expo-web-browser';
-
-WebBrowser.maybeCompleteAuthSession();
 
 // Helper to add timeout to promises
 const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> => {
@@ -244,8 +242,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: deepLink, // Direct deep link - Supabase will handle the callback
-          skipBrowserRedirect: Platform.OS !== 'web',
+          redirectTo: deepLink, // Direct deep link - Supabase handles callback automatically
+          skipBrowserRedirect: true, // We'll handle the redirect manually
         },
       });
 
@@ -273,14 +271,36 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           // Check if URL is deep link or Supabase callback
           let tokensUrl = result.url;
           
-          // If it's a deep link, tokens should be in hash or query params
-          // Accept tracksy:// scheme (production-ready)
-          if (tokensUrl.startsWith('tracksy://') || tokensUrl.includes('auth/callback')) {
-            console.log('📱 Received deep link, parsing tokens...');
-            const url = new URL(tokensUrl);
+          // Parse tokens from URL - could be in deep link or Supabase callback
+          console.log('📱 Parsing tokens from URL:', tokensUrl);
+          
+          let params: URLSearchParams | null = null;
+          let url: URL | null = null;
+          
+          try {
+            url = new URL(tokensUrl);
+          } catch (e) {
+            // If URL parsing fails, try to extract from string
+            console.log('⚠️ URL parsing failed, trying manual extraction...');
+            const hashMatch = tokensUrl.match(/#([^?]*)/);
+            const queryMatch = tokensUrl.match(/\?([^#]*)/);
             
-            // Try hash first (most common)
-            let params: URLSearchParams;
+            if (hashMatch) {
+              params = new URLSearchParams(hashMatch[1]);
+              console.log('📋 Tokens in hash (manual):', hashMatch[1]);
+            } else if (queryMatch) {
+              params = new URLSearchParams(queryMatch[1]);
+              console.log('📋 Tokens in query (manual):', queryMatch[1]);
+            } else {
+              // Try to get everything after # or ?
+              const fragment = tokensUrl.split('#')[1] || tokensUrl.split('?')[1] || tokensUrl;
+              params = new URLSearchParams(fragment);
+              console.log('📋 Tokens from fragment (manual):', fragment);
+            }
+          }
+          
+          // If we have a valid URL, try standard parsing
+          if (!params && url) {
             if (url.hash && url.hash.length > 1) {
               const hash = url.hash.substring(1);
               params = new URLSearchParams(hash);
@@ -290,33 +310,52 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
               console.log('📋 Tokens in query:', url.search);
             } else {
               // Try to get from path or fragment
-              const fragment = tokensUrl.split('#')[1] || tokensUrl.split('?')[1];
-              params = new URLSearchParams(fragment || '');
-              console.log('📋 Tokens from fragment:', fragment);
+              const fragment = tokensUrl.split('#')[1] || tokensUrl.split('?')[1] || '';
+              if (fragment) {
+                params = new URLSearchParams(fragment);
+                console.log('📋 Tokens from fragment:', fragment);
+              }
+            }
+          }
+          
+          if (!params) {
+            console.error('❌ Could not parse URL parameters');
+            console.error('Full URL:', tokensUrl);
+            return;
+          }
+          
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+          const error_param = params.get('error');
+          const error_description = params.get('error_description');
+
+          if (error_param) {
+            console.error('❌ OAuth error in callback:', error_param);
+            console.error('   Description:', error_description);
+            throw new Error(`OAuth error: ${error_param} - ${error_description}`);
+          }
+
+          if (access_token && refresh_token) {
+            console.log('✅ Tokens found, setting session...');
+            const { data: { session }, error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
+            
+            if (error) {
+              console.error('❌ Error setting session:', error);
+              throw error;
             }
             
-            const access_token = params.get('access_token');
-            const refresh_token = params.get('refresh_token');
-
-            if (access_token && refresh_token) {
-              console.log('✅ Tokens found, setting session...');
-              const { data: { session }, error } = await supabase.auth.setSession({
-                access_token,
-                refresh_token,
-              });
-              
-              if (error) throw error;
-              setSession(session);
-              setUser(session?.user ?? null);
-              console.log('✅ Session set successfully!');
-            } else {
-              console.error('❌ No tokens found in deep link URL');
-              console.error('Full URL:', tokensUrl);
-              console.error('URL hash:', url.hash);
-              console.error('URL search:', url.search);
-            }
+            setSession(session);
+            setUser(session?.user ?? null);
+            console.log('✅ Session set successfully!');
           } else {
-            console.error('❌ Unexpected URL format:', tokensUrl);
+            console.error('❌ No tokens found in callback URL');
+            console.error('Full URL:', tokensUrl);
+            console.error('Access token present:', !!access_token);
+            console.error('Refresh token present:', !!refresh_token);
+            console.error('All params:', Array.from(params.entries()));
           }
         } else if (result.type === 'cancel') {
           console.log('⚠️ User cancelled OAuth flow');
@@ -331,7 +370,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           console.error('⚠️ This might be an SSL/certificate issue. Check:');
           console.error('  1. Phone date/time is correct');
           console.error('  2. Internet connection is working');
-          console.error('  3. Try opening https://ztlyoketftsciylvfq.supabase.co in phone browser');
+          console.error('  3. Try opening https://ztlyoketfstcsjylvfyq.supabase.co in phone browser');
         }
       }
     } catch (error: any) {
@@ -349,54 +388,120 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const signInWithApple = useCallback(async () => {
     try {
       setLoading(true);
+      // Use deep link directly - Supabase will handle the callback
       const deepLink = getDeepLink();
-      const redirectTo = getRedirectUrl(deepLink); // This tells Supabase where to redirect after OAuth
       
       console.log('🔗 Apple OAuth deep link:', deepLink);
-      console.log('🔗 Full redirect URL:', redirectTo); // Log the full URL passed to Supabase
+      
+      console.log('🔍 Calling Supabase signInWithOAuth with:');
+      console.log('   Provider: apple');
+      console.log('   RedirectTo:', deepLink);
+      console.log('   SkipBrowserRedirect: true');
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'apple',
         options: {
-          redirectTo, // Supabase callback URL with deep link as query param
-          skipBrowserRedirect: Platform.OS !== 'web',
+          redirectTo: deepLink, // Direct deep link - Supabase handles callback automatically
+          scopes: 'name email',
+          skipBrowserRedirect: true, // We'll handle the redirect manually
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase signInWithOAuth error:', error);
+        console.error('   Error message:', error.message);
+        console.error('   Error status:', error.status);
+        throw error;
+      }
+      
+      console.log('✅ Supabase signInWithOAuth success');
+      console.log('   Data URL:', data?.url);
 
       if (Platform.OS !== 'web' && data?.url) {
         console.log('🌐 Opening Apple OAuth URL:', data.url);
         console.log('🔗 Expected deep link:', deepLink);
-        console.log('🔗 Full redirect URL passed to Supabase:', redirectTo);
-        console.log('🔍 Parsing OAuth URL to check for issues...');
+        
+        // Fix URL if it's malformed - this is a workaround for Supabase bug
+        let urlToOpen = data.url;
+        console.log('🔍 Original OAuth URL from Supabase:', urlToOpen);
+        
+        // Fix if missing protocol and/or domain prefix
+        if (urlToOpen.startsWith('/oketfstcsjylvfyq') || urlToOpen.includes('/oketfstcsjylvfyq')) {
+          console.warn('⚠️ FIXING URL: Missing protocol and domain prefix detected...');
+          urlToOpen = urlToOpen.replace(/\/oketfstcsjylvfyq\.supabase\.co/g, 'https://ztlyoketfstcsjylvfyq.supabase.co');
+          console.log('✅ Fixed URL:', urlToOpen);
+        }
+        
+        // Fix if missing 'z' prefix
+        if (urlToOpen.includes('tlyoketfstcsjylvfyq.supabase.co') && !urlToOpen.includes('ztlyoketfstcsjylvfyq.supabase.co')) {
+          console.warn('⚠️ FIXING URL: Missing "z" detected, fixing automatically...');
+          urlToOpen = urlToOpen.replace(/tlyoketfstcsjylvfyq\.supabase\.co/g, 'ztlyoketfstcsjylvfyq.supabase.co');
+          console.log('✅ Fixed URL:', urlToOpen);
+        }
+        
+        // Fix if old domain with 'i' is used
+        if (urlToOpen.includes('ztlyoketftsciylvfq.supabase.co')) {
+          console.warn('⚠️ FIXING URL: Old domain with "i" detected, fixing to "j"...');
+          urlToOpen = urlToOpen.replace(/ztlyoketftsciylvfq\.supabase\.co/g, 'ztlyoketfstcsjylvfyq.supabase.co');
+          console.log('✅ Fixed URL:', urlToOpen);
+        }
+        
+        // Ensure URL has protocol
+        if (!urlToOpen.startsWith('http://') && !urlToOpen.startsWith('https://')) {
+          console.warn('⚠️ FIXING URL: Missing protocol, adding https://...');
+          if (urlToOpen.startsWith('/')) {
+            urlToOpen = 'https://ztlyoketfstcsjylvfyq.supabase.co' + urlToOpen;
+          } else {
+            urlToOpen = 'https://' + urlToOpen;
+          }
+          console.log('✅ Fixed URL:', urlToOpen);
+        }
         
         // Validate URL before opening
         try {
-          const testUrl = new URL(data.url);
+          const testUrl = new URL(urlToOpen);
           console.log('✅ OAuth URL is valid');
           console.log('   Hostname:', testUrl.hostname);
           console.log('   Full URL:', testUrl.href);
           console.log('   Search params:', testUrl.search);
           
           // Check if URL contains the correct Supabase domain
-          if (!testUrl.hostname.includes('ztlyoketftsciylvfq.supabase.co') && !testUrl.hostname.includes('appleid.apple.com')) {
-            console.warn('⚠️ OAuth URL hostname might be incorrect:', testUrl.hostname);
+          if (!testUrl.hostname.includes('ztlyoketfstcsjylvfyq.supabase.co') && !testUrl.hostname.includes('appleid.apple.com')) {
+            console.error('❌ CRITICAL: OAuth URL hostname is incorrect!');
+            console.error('   Expected: ztlyoketfstcsjylvfyq.supabase.co or appleid.apple.com');
+            console.error('   Got:', testUrl.hostname);
+            console.error('   Full URL:', testUrl.href);
+            console.error('   ⚠️ This means Site URL in Supabase Dashboard is wrong!');
+            console.error('   Fix: Supabase Dashboard → Authentication → URL Configuration → Site URL');
+            console.error('   Should be: https://ztlyoketfstcsjylvfyq.supabase.co');
+            
+            // Check if it's missing the 'z'
+            if (testUrl.hostname.includes('tlyoketfstcsjylvfyq.supabase.co')) {
+              console.error('   ❌ PROBLEM FOUND: Missing "z" in URL!');
+              console.error('   Current Site URL in Supabase is probably: https://tlyoketfstcsjylvfyq.supabase.co');
+              console.error('   Should be: https://ztlyoketfstcsjylvfyq.supabase.co');
+            }
           }
         } catch (urlError) {
-          console.error('❌ Invalid OAuth URL:', data.url);
+          console.error('❌ Invalid OAuth URL:', urlToOpen);
           console.error('❌ URL Error:', urlError);
           throw new Error('Invalid OAuth URL received from Supabase');
         }
         
+        // Try to open browser with better error handling
+        console.log('🌐 Attempting to open browser with URL:', urlToOpen);
+        console.log('🔗 Expected deep link callback:', deepLink);
+        
         try {
           const result = await WebBrowser.openAuthSessionAsync(
-            data.url,
+            urlToOpen, // Use fixed URL instead of original
             deepLink, // Deep link for redirect back to app
             {
               showInRecents: true,
             }
           );
+          
+          console.log('✅ Browser opened successfully, result type:', result.type);
 
           console.log('📱 Apple Auth session result type:', result.type);
           console.log('📱 Apple Auth session result:', result);
@@ -407,14 +512,84 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           // Check if URL is deep link or Supabase callback
           let tokensUrl = result.url;
           
-          // If it's a deep link, tokens should be in hash or query params
-          // Accept tracksy:// scheme (production-ready)
-          if (tokensUrl.startsWith('tracksy://') || tokensUrl.includes('auth/callback')) {
-            console.log('📱 Received deep link, parsing tokens...');
+          // Check if URL contains error parameters
+          if (tokensUrl.includes('error=') || tokensUrl.includes('error_code=')) {
+            console.error('❌ OAuth error detected in callback URL');
             const url = new URL(tokensUrl);
+            const error = url.searchParams.get('error') || url.hash.split('&').find(p => p.startsWith('error='))?.split('=')[1];
+            const errorCode = url.searchParams.get('error_code') || url.hash.split('&').find(p => p.startsWith('error_code='))?.split('=')[1];
+            const errorDesc = url.searchParams.get('error_description') || url.hash.split('&').find(p => p.startsWith('error_description='))?.split('=')[1];
             
-            // Try hash first (most common)
-            let params: URLSearchParams;
+            console.error('   Error:', error);
+            console.error('   Error Code:', errorCode);
+            console.error('   Error Description:', errorDesc ? decodeURIComponent(errorDesc) : 'N/A');
+            
+            if (errorCode === 'bad_oauth_callback' || errorDesc?.includes('state parameter missing')) {
+              console.error('❌ CRITICAL: OAuth state parameter missing!');
+              console.error('   This usually means:');
+              console.error('   1. Apple Secret Key in Supabase is incorrect (should be JWT, not .p8 file)');
+              console.error('   2. Key ID or Team ID in Supabase is wrong');
+              console.error('   3. Service ID mismatch between Supabase and Apple Developer');
+              console.error('   4. Redirect URL mismatch between Supabase and Apple Developer');
+              console.error('   Fix: Supabase Dashboard → Authentication → Providers → Apple → Check all fields');
+              console.error('   Required values:');
+              console.error('     - Services ID: bg.tracksy.app.signin');
+              console.error('     - Key ID: SA5LZMLW98');
+              console.error('     - Team ID: 5RQ9CQARF6');
+              console.error('     - Secret Key: JWT token (run: node generate-apple-jwt.js)');
+            }
+            
+            if (errorDesc?.includes('Unable to exchange external code')) {
+              console.error('❌ CRITICAL: Cannot exchange Apple code!');
+              console.error('   This means Apple returned a code, but Supabase cannot verify it.');
+              console.error('   Most likely causes:');
+              console.error('   1. Apple Secret Key is wrong or expired (must be JWT, not .p8 file)');
+              console.error('   2. Key ID mismatch (Supabase vs Apple Developer)');
+              console.error('   3. Team ID mismatch (Supabase vs Apple Developer)');
+              console.error('   4. Services ID mismatch (Supabase vs Apple Developer)');
+              console.error('   Fix steps:');
+              console.error('   1. Run: node generate-apple-jwt.js');
+              console.error('   2. Copy the ENTIRE JWT token');
+              console.error('   3. Paste it in Supabase → Authentication → Providers → Apple → Secret Key');
+              console.error('   4. Verify Key ID: SA5LZMLW98');
+              console.error('   5. Verify Team ID: 5RQ9CQARF6');
+              console.error('   6. Verify Services ID: bg.tracksy.app.signin');
+              console.error('   7. Save and wait 1-2 minutes for changes to propagate');
+            }
+            
+            throw new Error(`OAuth error: ${error} (${errorCode})`);
+          }
+          
+          // Parse tokens from URL - could be in deep link or Supabase callback
+          console.log('📱 Parsing tokens from URL:', tokensUrl);
+          
+          let params: URLSearchParams | null = null;
+          let url: URL | null = null;
+          
+          try {
+            url = new URL(tokensUrl);
+          } catch (e) {
+            // If URL parsing fails, try to extract from string
+            console.log('⚠️ URL parsing failed, trying manual extraction...');
+            const hashMatch = tokensUrl.match(/#([^?]*)/);
+            const queryMatch = tokensUrl.match(/\?([^#]*)/);
+            
+            if (hashMatch) {
+              params = new URLSearchParams(hashMatch[1]);
+              console.log('📋 Tokens in hash (manual):', hashMatch[1]);
+            } else if (queryMatch) {
+              params = new URLSearchParams(queryMatch[1]);
+              console.log('📋 Tokens in query (manual):', queryMatch[1]);
+            } else {
+              // Try to get everything after # or ?
+              const fragment = tokensUrl.split('#')[1] || tokensUrl.split('?')[1] || tokensUrl;
+              params = new URLSearchParams(fragment);
+              console.log('📋 Tokens from fragment (manual):', fragment);
+            }
+          }
+          
+          // If we have a valid URL, try standard parsing
+          if (!params && url) {
             if (url.hash && url.hash.length > 1) {
               const hash = url.hash.substring(1);
               params = new URLSearchParams(hash);
@@ -424,33 +599,52 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
               console.log('📋 Tokens in query:', url.search);
             } else {
               // Try to get from path or fragment
-              const fragment = tokensUrl.split('#')[1] || tokensUrl.split('?')[1];
-              params = new URLSearchParams(fragment || '');
-              console.log('📋 Tokens from fragment:', fragment);
+              const fragment = tokensUrl.split('#')[1] || tokensUrl.split('?')[1] || '';
+              if (fragment) {
+                params = new URLSearchParams(fragment);
+                console.log('📋 Tokens from fragment:', fragment);
+              }
+            }
+          }
+          
+          if (!params) {
+            console.error('❌ Could not parse URL parameters');
+            console.error('Full URL:', tokensUrl);
+            return;
+          }
+          
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+          const error_param = params.get('error');
+          const error_description = params.get('error_description');
+
+          if (error_param) {
+            console.error('❌ OAuth error in callback:', error_param);
+            console.error('   Description:', error_description);
+            throw new Error(`OAuth error: ${error_param} - ${error_description}`);
+          }
+
+          if (access_token && refresh_token) {
+            console.log('✅ Tokens found, setting session...');
+            const { data: { session }, error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
+            
+            if (error) {
+              console.error('❌ Error setting session:', error);
+              throw error;
             }
             
-            const access_token = params.get('access_token');
-            const refresh_token = params.get('refresh_token');
-
-            if (access_token && refresh_token) {
-              console.log('✅ Tokens found, setting session...');
-              const { data: { session }, error } = await supabase.auth.setSession({
-                access_token,
-                refresh_token,
-              });
-              
-              if (error) throw error;
-              setSession(session);
-              setUser(session?.user ?? null);
-              console.log('✅ Session set successfully!');
-            } else {
-              console.error('❌ No tokens found in Apple deep link URL');
-              console.error('Full URL:', tokensUrl);
-              console.error('URL hash:', url.hash);
-              console.error('URL search:', url.search);
-            }
+            setSession(session);
+            setUser(session?.user ?? null);
+            console.log('✅ Session set successfully!');
           } else {
-            console.error('❌ Unexpected URL format:', tokensUrl);
+            console.error('❌ No tokens found in callback URL');
+            console.error('Full URL:', tokensUrl);
+            console.error('Access token present:', !!access_token);
+            console.error('Refresh token present:', !!refresh_token);
+            console.error('All params:', Array.from(params.entries()));
           }
         } else if (result.type === 'cancel') {
           console.log('⚠️ User cancelled Apple OAuth flow');
@@ -461,19 +655,35 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           console.error('Result:', result);
         }
         } catch (browserError: any) {
-          console.error('❌ Browser error:', browserError.message);
+          console.error('❌ Browser error during OAuth:', browserError.message);
+          console.error('❌ Browser error type:', browserError.name);
           console.error('❌ Browser error stack:', browserError.stack);
-          console.error('⚠️ This might be an SSL/certificate or DNS issue. Check:');
-          console.error('  1. Phone date/time is correct');
-          console.error('  2. Internet connection is working');
-          console.error('  3. Try opening https://ztlyoketftsciylvfq.supabase.co in phone browser');
-          console.error('  4. Check if DNS is working (try 8.8.8.8 as DNS server)');
-          console.error('  5. OAuth URL that failed:', data?.url);
+          console.error('⚠️ Failed to open OAuth URL in browser');
+          console.error('   OAuth URL that failed:', urlToOpen);
+          console.error('   Deep link expected:', deepLink);
           
-          // Show user-friendly error
+          // Check for specific error types
           if (browserError.message?.includes('DNS') || browserError.message?.includes('NXDOMAIN')) {
             console.error('❌ DNS Error: Cannot resolve domain. Check internet connection.');
+            console.error('   Solutions:');
+            console.error('  1. Check internet connection on phone');
+            console.error('  2. Try opening https://ztlyoketfstcsjylvfyq.supabase.co manually in phone browser');
+            console.error('  3. Change DNS server on phone to 8.8.8.8 (Google DNS)');
+            console.error('  4. Check if phone date/time is correct');
+            console.error('  5. Try different network (WiFi vs mobile data)');
+          } else if (browserError.message?.includes('NETWORK') || browserError.message?.includes('network')) {
+            console.error('❌ Network Error: Cannot connect to server.');
+            console.error('   Check internet connection and try again.');
+          } else {
+            console.error('❌ Unknown browser error. This might be an Android emulator issue.');
+            console.error('   Try:');
+            console.error('  1. Restart the emulator');
+            console.error('  2. Check if Chrome is installed in the emulator');
+            console.error('  3. Try on a real device instead of emulator');
           }
+          
+          // Don't throw - just log the error and let the user try again
+          console.error('⚠️ OAuth flow failed, but user can try again');
         }
       }
     } catch (error: any) {
@@ -491,13 +701,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const signInWithFacebook = useCallback(async () => {
     try {
       setLoading(true);
-      const redirectTo = getRedirectUrl();
+      const deepLink = getDeepLink();
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
-          redirectTo,
-          skipBrowserRedirect: Platform.OS !== 'web',
+          redirectTo: deepLink, // Direct deep link - Supabase handles callback automatically
+          skipBrowserRedirect: true, // We'll handle the redirect manually
         },
       });
 
@@ -506,7 +716,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (Platform.OS !== 'web' && data?.url) {
         const result = await WebBrowser.openAuthSessionAsync(
           data.url,
-          redirectTo,
+          deepLink,
           {
             showInRecents: true,
           }

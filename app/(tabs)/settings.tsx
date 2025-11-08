@@ -197,19 +197,17 @@ export default function SettingsScreen() {
                     onPress={async () => {
                       try {
                         console.log('🚪 Logout button pressed');
-                        console.log('🔍 Current route:', router);
                         
                         // Sign out first
                         await signOut();
                         console.log('✅ Sign out completed');
                         
                         // Small delay to ensure state is updated
-                        await new Promise(resolve => setTimeout(resolve, 200));
+                        await new Promise(resolve => setTimeout(resolve, 300));
                         
                         // Navigate to login - use replace to prevent going back
                         console.log('🔍 Attempting to navigate to /login...');
-                        // Dismiss any modals/tabs first, then navigate
-                        router.dismissAll();
+                        // The auto-redirect in _layout.tsx should handle this, but we'll do it explicitly too
                         router.replace('/login');
                         console.log('✅ Navigation command sent');
                       } catch (error) {
@@ -218,7 +216,7 @@ export default function SettingsScreen() {
                         setTimeout(() => {
                           console.log('🔍 Fallback: attempting to navigate to /login...');
                           router.replace('/login');
-                        }, 200);
+                        }, 300);
                       }
                     }}
                   >
