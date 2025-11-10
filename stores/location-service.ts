@@ -18,6 +18,10 @@ import { computeRecommendedSpeedKmH } from '@/utils/speed-calculations';
 
 const LOCATION_TASK_NAME = 'background-location-task';
 
+// Централизирани константи за debounce на известия
+const NOTIFICATION_DEBOUNCE_MS = 30000;   // 30 секунди между известия за същия сектор
+const WARNING_COOLDOWN_MS = 120000;       // 2 минути между early-warning известия
+
 interface LocationData {
   latitude: number;
   longitude: number;
@@ -232,6 +236,7 @@ interface SectorTrackingState {
   lastNotificationTime: { [key: string]: number };
   warnedSectors: string[];
   hasNotifiedAverageSpeedExceeded: { [sectorId: string]: boolean }; // Флаг за да не дублираме нотификации за средна скорост
+  lastSectorEvent: { sectorId: string | null; eventType: 'entry' | 'exit' | null; timestamp: number }; // Последно изпратено събитие за защита от дублиране
 }
 
 // In-memory cache за намаляване на I/O операции
@@ -253,7 +258,8 @@ async function loadStateFromStorage(): Promise<void> {
       currentSectorId: null,
       lastNotificationTime: {},
       warnedSectors: [],
-      hasNotifiedAverageSpeedExceeded: {}
+      hasNotifiedAverageSpeedExceeded: {},
+      lastSectorEvent: { sectorId: null, eventType: null, timestamp: 0 }
     };
     
     const speedReadingsStr = await AsyncStorage.getItem('sector-speed-readings');
@@ -262,6 +268,10 @@ async function loadStateFromStorage(): Promise<void> {
     // Инициализираме флага ако липсва (backward compatibility)
     if (memTrackingState && !memTrackingState.hasNotifiedAverageSpeedExceeded) {
       memTrackingState.hasNotifiedAverageSpeedExceeded = {};
+    }
+    // Инициализираме lastSectorEvent ако липсва (backward compatibility)
+    if (memTrackingState && !memTrackingState.lastSectorEvent) {
+      memTrackingState.lastSectorEvent = { sectorId: null, eventType: null, timestamp: 0 };
     }
   } catch (error) {
     console.error('Failed to load state from storage:', error);
@@ -273,7 +283,8 @@ async function loadStateFromStorage(): Promise<void> {
       currentSectorId: null,
       lastNotificationTime: {},
       warnedSectors: [],
-      hasNotifiedAverageSpeedExceeded: {}
+      hasNotifiedAverageSpeedExceeded: {},
+      lastSectorEvent: { sectorId: null, eventType: null, timestamp: 0 }
     };
     memSpeedReadings = [];
   }
@@ -370,7 +381,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           try {
             sectorsWithRoutes = JSON.parse(sectorsWithRoutesStr);
           } catch {
-            console.log('Failed to parse sectors with routes, using default');
+            if (__DEV__) console.log('Failed to parse sectors with routes, using default');
           }
         }
         
@@ -404,9 +415,9 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             const isApproaching = isApproachingSectorOnRoute(location.coords, sectorCheck, WARNING_DISTANCE_M);
             
             if (isApproaching) {
-              // Проверяваме дали не сме изпратили известие скоро
-              const lastWarningTime = trackingState.lastNotificationTime[warningKey] || 0;
-              if (now - lastWarningTime > 120000) { // Минимум 2 минути между предупрежденията
+            // Проверяваме дали не сме изпратили известие скоро
+            const lastWarningTime = trackingState.lastNotificationTime[warningKey] || 0;
+            if (now - lastWarningTime > WARNING_COOLDOWN_MS) {
                 trackingState.lastNotificationTime[warningKey] = now;
                 shouldSaveTrackingState = true; // ВАЖНО: Запазваме промяната
                 
@@ -442,7 +453,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                   trigger: null,
                 });
                 
-                console.log(`Warning: Approaching sector ${sector.name} on correct route at ${distanceText}`);
+                if (__DEV__) console.log(`Warning: Approaching sector ${sector.name} on correct route at ${distanceText}`);
               }
             }
             
@@ -472,13 +483,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           };
           
           const isNear = isPointNearSector(location.coords, sectorCheck, PROXIMITY_THRESHOLD_ENTER);
-          if (isNear) {
+          if (isNear && __DEV__) {
             console.log(`✅ Found sector nearby: ${sector.name} (ID: ${sector.id})`);
           }
           return isNear;
         });
         
-        if (newSector) {
+        if (newSector && __DEV__) {
           console.log(`🎯 New sector detected: ${newSector.name} (ID: ${newSector.id})`);
         }
 
@@ -509,6 +520,15 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             // Може би излизаме от сектора
             trackingState.exitConfirmations++;
             
+            // Anti-loop защита: ако имаме твърде много exit confirmations, ресетваме hard
+            // Това предотвратява "излизане/влизане/излизане" цикъл при нестабилен GPS
+            if (trackingState.exitConfirmations > 5) {
+              if (__DEV__) console.log('Anti-loop: Resetting exit confirmations due to GPS jitter');
+              trackingState.exitConfirmations = 0;
+              shouldSaveTrackingState = true;
+              return; // Пропускаме тази итерация
+            }
+            
             // Изискваме 3 потвърждения за излизане
             if (trackingState.exitConfirmations >= 3) {
               // Излизаме от сектора
@@ -530,15 +550,32 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     }
                   } catch (e) {
-                    console.log('Haptics not available:', e);
+                    if (__DEV__) console.log('Haptics not available:', e);
                   }
                 }
                 
-                // Изпращаме известие само ако е включено и не сме изпратили такова за този сектор в последните 5 секунди
+                // Изпращаме известие само ако е включено и не сме изпратили такова за този сектор в последните 30 секунди
                 const exitNotificationKey = `exit-${exitingSector.id}`;
                 const lastExitNotificationTime = trackingState.lastNotificationTime[exitNotificationKey] || 0;
-                const NOTIFICATION_DEBOUNCE_MS = 5000;
-                const shouldSendExitNotification = now - lastExitNotificationTime >= NOTIFICATION_DEBOUNCE_MS;
+                
+                // Финална защита: пропускаме ако вече има активен exit event
+                const lastEvent = trackingState.lastSectorEvent;
+                if (lastEvent.eventType === 'exit' && lastEvent.sectorId === exitingSector.id) {
+                  if (__DEV__) console.log(`Skipping duplicate exit notification for sector ${exitingSector.id}`);
+                  return; // Пропускаме ако вече има exit event активен
+                }
+                
+                // Проверяваме дали вече сме изпратили известие за излизане от този сектор скоро
+                const isDuplicateExit = (
+                  lastEvent.sectorId === exitingSector.id &&
+                  lastEvent.eventType === 'exit' &&
+                  now - lastEvent.timestamp < NOTIFICATION_DEBOUNCE_MS
+                );
+                
+                const shouldSendExitNotification = (
+                  !isDuplicateExit &&
+                  now - lastExitNotificationTime >= NOTIFICATION_DEBOUNCE_MS
+                );
                 
                 if (settings.notificationsEnabled && shouldSendExitNotification) {
                   await Notifications.scheduleNotificationAsync({
@@ -562,12 +599,17 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                     trigger: null,
                   });
                   
-                  // Запазваме времето за debounce
+                  // Запазваме времето за debounce и последното събитие
                   trackingState.lastNotificationTime[exitNotificationKey] = now;
+                  trackingState.lastSectorEvent = {
+                    sectorId: exitingSector.id,
+                    eventType: 'exit',
+                    timestamp: now
+                  };
                   shouldSaveTrackingState = true;
                 }
 
-                console.log(`Exited sector ${exitingSector.name} with avg speed ${avgSpeed.toFixed(1)} km/h`);
+                if (__DEV__) console.log(`Exited sector ${exitingSector.name} with avg speed ${avgSpeed.toFixed(1)} km/h`);
               }
               
               // Изчистваме данните
@@ -638,7 +680,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                     timestamp: new Date().toISOString(),
                   });
                   
-                  console.log('Violation saved to database successfully');
+                  if (__DEV__) console.log('Violation saved to database successfully');
                 }
               } catch (dbError) {
                 console.error('Failed to save violation to database:', dbError);
@@ -687,15 +729,26 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               try {
                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
               } catch (e) {
-                console.log('Haptics not available:', e);
+                if (__DEV__) console.log('Haptics not available:', e);
               }
             }
             
-            // Изпращаме известие само ако е включено и не сме изпратили такова за този сектор в последните 5 секунди
+            // Изпращаме известие само ако е включено и не сме изпратили такова за този сектор в последните 30 секунди
             const entryNotificationKey = `entry-${newSector.id}`;
             const lastEntryNotificationTime = trackingState.lastNotificationTime[entryNotificationKey] || 0;
-            const NOTIFICATION_DEBOUNCE_MS = 5000;
-            const shouldSendEntryNotification = now - lastEntryNotificationTime >= NOTIFICATION_DEBOUNCE_MS;
+            
+            // Проверяваме дали вече сме изпратили известие за влизане в този сектор скоро
+            const lastEvent = trackingState.lastSectorEvent;
+            const isDuplicateEntry = (
+              lastEvent.sectorId === newSector.id &&
+              lastEvent.eventType === 'entry' &&
+              now - lastEvent.timestamp < NOTIFICATION_DEBOUNCE_MS
+            );
+            
+            const shouldSendEntryNotification = (
+              !isDuplicateEntry &&
+              now - lastEntryNotificationTime >= NOTIFICATION_DEBOUNCE_MS
+            );
             
             if (settings.notificationsEnabled && shouldSendEntryNotification) {
               await Notifications.scheduleNotificationAsync({
@@ -720,12 +773,17 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                 trigger: null,
               });
               
-              // Запазваме времето за debounce
+              // Запазваме времето за debounce и последното събитие
               trackingState.lastNotificationTime[entryNotificationKey] = now;
+              trackingState.lastSectorEvent = {
+                sectorId: newSector.id,
+                eventType: 'entry',
+                timestamp: now
+              };
               shouldSaveTrackingState = true;
             }
             
-            console.log(`Entered sector ${newSector.name} with speed ${speed.toFixed(1)} km/h`);
+            if (__DEV__) console.log(`Entered sector ${newSector.name} with speed ${speed.toFixed(1)} km/h`);
           }
         }
 
@@ -845,7 +903,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           await flushStateToStorage(false); // Периодичен flush
         }
         
-        console.log(`🚀 MAX ACCURACY GPS: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}, Speed: ${speed.toFixed(1)} km/h, Accuracy: ${location.coords.accuracy?.toFixed(1)}m`);
+        if (__DEV__) console.log(`🚀 MAX ACCURACY GPS: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}, Speed: ${speed.toFixed(1)} km/h, Accuracy: ${location.coords.accuracy?.toFixed(1)}m`);
       } catch (error) {
         console.error('Error processing background location:', error);
       }
@@ -924,7 +982,7 @@ export class BackgroundLocationService {
   static async startBackgroundLocationTracking(): Promise<boolean> {
     try {
       if (Platform.OS === 'web') {
-        console.log('Background location not supported on web');
+        if (__DEV__) console.log('Background location not supported on web');
         return false;
       }
 
@@ -935,12 +993,12 @@ export class BackgroundLocationService {
       await this.checkBatteryOptimization();
 
       // ВИНАГИ изискваме максимални разрешения
-      console.log('🔐 Requesting ALWAYS location permissions for maximum GPS accuracy...');
+      if (__DEV__) console.log('🔐 Requesting ALWAYS location permissions for maximum GPS accuracy...');
       
       // Първо искаме foreground разрешение
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       if (foregroundStatus !== 'granted') {
-        console.log('❌ Foreground location permission not granted');
+        if (__DEV__) console.log('❌ Foreground location permission not granted');
         
         // Показваме критично известие
         await Notifications.scheduleNotificationAsync({
@@ -964,7 +1022,7 @@ export class BackgroundLocationService {
       // След това ЗАДЪЛЖИТЕЛНО искаме background разрешение (винаги)
       const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
       if (backgroundStatus !== 'granted') {
-        console.log('❌ Background location permission not granted - CRITICAL ERROR');
+        if (__DEV__) console.log('❌ Background location permission not granted - CRITICAL ERROR');
         
         // Показваме критично известие с детайлни инструкции
         await Notifications.scheduleNotificationAsync({
@@ -985,12 +1043,12 @@ export class BackgroundLocationService {
         return false;
       }
       
-      console.log('✅ All location permissions granted - proceeding with maximum accuracy GPS tracking');
+      if (__DEV__) console.log('✅ All location permissions granted - proceeding with maximum accuracy GPS tracking');
 
       // Проверяваме дали вече работи
       const isTaskRunning = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
       if (isTaskRunning) {
-        console.log('Background location task already running');
+        if (__DEV__) console.log('Background location task already running');
         this.isRunning = true;
         return true;
       }
@@ -1012,7 +1070,7 @@ export class BackgroundLocationService {
           },
         });
         
-        console.log('🚀 Background location tracking started with MAXIMUM GPS accuracy settings');
+        if (__DEV__) console.log('🚀 Background location tracking started with MAXIMUM GPS accuracy settings');
       } catch (locationError: any) {
         console.error('Location service error:', locationError);
         
@@ -1043,7 +1101,7 @@ export class BackgroundLocationService {
       }
 
       this.isRunning = true;
-      console.log('✅ Background location tracking started with MAXIMUM accuracy');
+      if (__DEV__) console.log('✅ Background location tracking started with MAXIMUM accuracy');
       
       // Показваме persistent notification за максимална точност
       await this.showBackgroundNotification();
@@ -1080,7 +1138,7 @@ export class BackgroundLocationService {
       const isTaskRunning = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
       if (isTaskRunning) {
         await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
-        console.log('Background location tracking stopped');
+        if (__DEV__) console.log('Background location tracking stopped');
       }
 
       this.isRunning = false;

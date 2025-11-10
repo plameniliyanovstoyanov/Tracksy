@@ -2,9 +2,9 @@
 // Used consistently across BG task and UI store to avoid flickering
 
 export const PROXIMITY_THRESHOLD_ENTER = 50;   // вход в сектор (метри)
-export const PROXIMITY_THRESHOLD_EXIT = 120;   // изход от сектор (по-щедър, за да избегнем фликер)
+export const PROXIMITY_THRESHOLD_EXIT = 150;   // изход от сектор (по-щедър, за да избегнем фликер и дублиране)
 export const WARNING_DISTANCE_M = 2000;        // early-warning зона (метри)
-export const ROUTE_SNAP_THRESHOLD_M = 100;     // близост до трасе за предупреждения (метри)
+export const ROUTE_SNAP_THRESHOLD_M = 150;     // близост до трасе за предупреждения (метри) - увеличено за по-стабилна детекция
 
 // GPS quality thresholds
 export const GPS_MAX_ACCURACY_M = 30;          // максимална точност за валидна точка
