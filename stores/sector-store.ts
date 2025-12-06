@@ -542,21 +542,22 @@ export const useSectorStore = create(
           }
           
           // Calculate progress (0 to 1)
-          // When we just entered (distanceTraveled was 0), use distance from start point
-          // This ensures we start from 0% instead of potentially showing incorrect high percentage
+          // When we just entered (distanceTraveled === 0), progress MUST be 0
+          // This ensures we always start from 0% when entering a sector
           let progress: number;
+          let newDistanceTraveled: number;
+          
           if (distanceTraveled === 0) {
-            // Just entered - calculate from actual start point distance only
-            const distanceFromStartPoint = getDistance(
-              currentSector.startPoint.lat,
-              currentSector.startPoint.lng,
-              location.latitude,
-              location.longitude
-            );
-            progress = Math.min(1, Math.max(0, distanceFromStartPoint / sectorTotalDistance));
+            // Just entered - progress is ALWAYS 0, regardless of physical location
+            // This prevents showing 100% when entering near the end of a sector
+            progress = 0;
+            // Start tracking distance from this point forward
+            // Use a small initial value to mark that we've started tracking
+            newDistanceTraveled = Math.max(0, distanceFromStart);
           } else {
             // Already traveling - use calculated distance along route
             progress = Math.min(1, Math.max(0, distanceFromStart / sectorTotalDistance));
+            newDistanceTraveled = distanceFromStart;
           }
           
           // Check if we've crossed the 50% notification threshold
@@ -574,7 +575,7 @@ export const useSectorStore = create(
           
           set({ 
             sectorProgress: progress,
-            distanceTraveled: distanceTraveled === 0 ? (progress * sectorTotalDistance) : distanceFromStart
+            distanceTraveled: newDistanceTraveled
           });
         } catch (error) {
           console.error('Error updating sector progress:', error);
