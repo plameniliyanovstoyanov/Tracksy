@@ -150,3 +150,6 @@ https://ztlyoketfstcsjylvfyq.supabase.co
 ### Проблем: DNS грешка
 **Решение**: Провери Site URL в Supabase Dashboard
 
+
+
+
