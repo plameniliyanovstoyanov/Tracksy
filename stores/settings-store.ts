@@ -220,8 +220,9 @@ export const useSettingsStore = create(
             .single();
 
           if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-            console.error('Error fetching user settings:', error);
-            throw new Error('Failed to fetch user settings');
+            // Това не е критична грешка за UX – просто ще ползваме локални/default настройки
+            console.warn('Error fetching user settings (fallback to defaults):', error);
+            return;
           }
 
           // Return default settings if no record exists
@@ -260,8 +261,8 @@ export const useSettingsStore = create(
           
           console.log('Settings loaded from database');
         } catch (error) {
-          console.error('Failed to load settings from database:', error);
-          throw error;
+          // Не чупим приложението – само логваме и оставяме локалните/default настройки
+          console.warn('Failed to load settings from database (non-blocking):', error);
         }
       },
 

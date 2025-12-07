@@ -18,8 +18,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen() {
-  const { signInWithGoogle, signInWithApple, signInAsAdmin, loading } = useAuth();
+  const { signInWithGoogle, signInWithApple, signInAsAdmin, loading: authLoading, isAuthenticated } = useAuth();
   const router = useRouter();
+  
+  // Navigate when authenticated (след като auth loading приключи)
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (isAuthenticated) {
+      console.log('✅ User authenticated, navigating to tabs...');
+      router.replace('/(tabs)');
+    }
+  }, [authLoading, isAuthenticated, router]);
   
   // Animation values for light trails
   const trail1 = useRef(new Animated.Value(-width)).current;
@@ -71,13 +81,15 @@ export default function LoginScreen() {
   }, []);
 
   const handleGoogleSignIn = async () => {
+    // Don't redirect here - let auth state change handle navigation
+    // The redirect will happen automatically when session is set
     await signInWithGoogle();
-    router.replace('/(tabs)');
   };
 
   const handleAppleSignIn = async () => {
+    // Don't redirect here - let auth state change handle navigation
+    // The redirect will happen automatically when session is set
     await signInWithApple();
-    router.replace('/(tabs)');
   };
 
 
@@ -88,7 +100,7 @@ export default function LoginScreen() {
 
 
 
-  if (loading) {
+  if (authLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#00FF88" />
@@ -163,7 +175,7 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={styles.button}
               onPress={handleGoogleSignIn}
-              disabled={loading}
+              disabled={authLoading}
               activeOpacity={0.8}
             >
               <LinearGradient
@@ -179,7 +191,7 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={styles.button}
               onPress={handleAppleSignIn}
-              disabled={loading}
+              disabled={authLoading}
               activeOpacity={0.8}
             >
               <LinearGradient
@@ -192,7 +204,7 @@ export default function LoginScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* Admin Access Button */}
+            {/* Guest / no-profile access button */}
             <View style={styles.dividerContainer}>
               <View style={styles.divider} />
               <Text style={styles.dividerText}>ИЛИ</Text>
@@ -202,7 +214,7 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={[styles.button, styles.adminButton]}
               onPress={handleAdminSignIn}
-              disabled={loading}
+              disabled={authLoading}
               activeOpacity={0.8}
             >
               <LinearGradient
@@ -211,7 +223,7 @@ export default function LoginScreen() {
               />
               <View style={styles.buttonContent}>
                 <Shield size={22} color="#FF8800" />
-                <Text style={[styles.buttonText, styles.adminButtonText]}>Продължи като Админ</Text>
+                <Text style={[styles.buttonText, styles.adminButtonText]}>Продължи без профил</Text>
               </View>
             </TouchableOpacity>
           </View>

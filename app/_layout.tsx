@@ -9,7 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSpeedStore } from "@/stores/speed-store";
 import { useSectorStore } from "@/stores/sector-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { StyleSheet, Platform, View, Text, ScrollView, Linking } from 'react-native';
+import { StyleSheet, Platform, View, Text, ScrollView } from 'react-native';
 import { AuthProvider, useAuth } from "@/stores/auth-store";
 import { DeviceProvider } from "@/stores/device-store";
 import { ViolationHistoryProvider } from "@/stores/violation-history-store";
@@ -89,127 +89,36 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 function RootLayoutNav() {
   console.log('🔍 RootLayoutNav starting...');
   
-  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const { user, isAdmin } = useAuth();
   const loadSettings = useSettingsStore((state) => state.loadFromStorage);
   const segments = useSegments();
   const router = useRouter();
   
-  console.log('🔍 RootLayoutNav rendered:', { isAuthenticated, hasUser: !!user, authLoading, segments });
+  console.log('🔍 RootLayoutNav rendered:', { hasUser: !!user, isAdmin, segments });
+  
 
-  // Load settings from database when user is authenticated
+  // Зареждане на настройки:
+  // - ако имаме user.id И не сме в admin/guest режим → товарим потребителски настройки от база
+  // - иначе товарим локални (анонимен или "продължи без профил")
   useEffect(() => {
-      if (isAuthenticated && user?.id) {
-        loadSettings(user.id).catch(err => {
-          console.error('Failed to load settings:', err);
-        });
-      } else {
-        // Load from local storage for anonymous users
-        loadSettings().catch(err => {
-          console.error('Failed to load settings:', err);
-        });
-      }
-    }, [isAuthenticated, user?.id, loadSettings]);
-
-    // Handle deep links for OAuth redirects
-    const handleDeepLink = async (url: string): Promise<void> => {
-      try {
-      // Check if it's an OAuth redirect with tokens
-      if (url.includes('access_token') || url.includes('refresh_token')) {
-        console.log('✅ OAuth deep link detected, parsing tokens...');
-        
-        const urlObj = new URL(url);
-        
-        // Try hash first (most common)
-        let params: URLSearchParams;
-        if (urlObj.hash && urlObj.hash.length > 1) {
-          const hash = urlObj.hash.substring(1);
-          params = new URLSearchParams(hash);
-          console.log('📋 Tokens in hash:', hash);
-        } else if (urlObj.search && urlObj.search.length > 1) {
-          params = new URLSearchParams(urlObj.search.substring(1));
-          console.log('📋 Tokens in query:', urlObj.search);
-        } else {
-          // Try to get from path or fragment
-          const fragment = url.split('#')[1] || url.split('?')[1];
-          params = new URLSearchParams(fragment || '');
-          console.log('📋 Tokens from fragment:', fragment);
-        }
-        
-        const access_token = params.get('access_token');
-        const refresh_token = params.get('refresh_token');
-
-        if (access_token && refresh_token) {
-          console.log('✅ Tokens found in deep link, setting session...');
-          const { data: { session }, error } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-          
-          if (error) {
-            console.error('❌ Error setting session:', error);
-            return;
-          }
-          
-          // Session will be updated automatically via auth state listener in auth-store
-          console.log('✅ Session set successfully from deep link!');
-        } else {
-          console.error('❌ No tokens found in deep link URL');
-        }
-      }
-    } catch (error: any) {
-      console.error('❌ Error handling deep link:', error.message);
+    if (user?.id && !isAdmin) {
+      loadSettings(user.id).catch(err => {
+        console.error('Failed to load settings:', err);
+      });
+    } else {
+      loadSettings().catch(err => {
+        console.error('Failed to load settings:', err);
+      });
     }
-  };
+  }, [user?.id, isAdmin, loadSettings]);
 
-  // Handle deep links for OAuth redirects
-  useEffect(() => {
-    // Handle initial URL (if app was opened via deep link)
-    Linking.getInitialURL().then((url) => {
-      if (url) {
-        console.log('🔗 App opened with URL:', url);
-        handleDeepLink(url);
-      }
-    });
-
-    // Listen for deep links while app is running
-    const subscription = Linking.addEventListener('url', (event) => {
-      console.log('🔗 Deep link received:', event.url);
-      handleDeepLink(event.url);
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
-  // Auto-redirect based on auth state
-  useEffect(() => {
-    if (authLoading) {
-      console.log('⏳ Auth still loading, waiting...');
-      return;
-    }
-
-    const inAuthGroup = segments[0] === 'login';
-    const inTabsGroup = segments[0] === '(tabs)';
-
-    console.log('🔍 Auth state check:', { isAuthenticated, inAuthGroup, inTabsGroup, segments });
-
-    if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to login if not authenticated and not already on login
-      console.log('🔐 Not authenticated, redirecting to login...');
-      router.replace('/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to tabs if authenticated and on login page
-      console.log('✅ Authenticated, redirecting to tabs...');
-      router.replace('/(tabs)');
-    }
-  }, [isAuthenticated, segments, authLoading, router]);
 
   console.log('🔍 RootLayoutNav returning Stack navigator');
   
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="modal" options={{ presentation: "modal" }} />
     </Stack>

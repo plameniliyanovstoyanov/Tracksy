@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Switch,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -190,40 +191,48 @@ export default function SettingsScreen() {
                       </Text>
                     </View>
                   </View>
-                  
+                </LinearGradient>
+                
                   <TouchableOpacity 
-                    style={styles.logoutButton}
+                    style={[styles.logoutButton, loading && styles.logoutButtonDisabled]}
                     disabled={loading}
+                    activeOpacity={0.6}
                     onPress={async () => {
+                      if (loading) {
+                        console.log('⚠️ Logout already in progress, ignoring press');
+                        return;
+                      }
+                      
                       try {
                         console.log('🚪 Logout button pressed');
                         
-                        // Sign out first
-                        await signOut();
-                        console.log('✅ Sign out completed');
+                        // Start sign out (don't wait for it to complete)
+                        const signOutPromise = signOut();
                         
-                        // Small delay to ensure state is updated
-                        await new Promise(resolve => setTimeout(resolve, 300));
-                        
-                        // Navigate to login - use replace to prevent going back
-                        console.log('🔍 Attempting to navigate to /login...');
-                        // The auto-redirect in _layout.tsx should handle this, but we'll do it explicitly too
+                        // Navigate immediately - signOut will clear state in background
+                        // The auto-redirect in _layout.tsx will also handle this
+                        console.log('🔍 Navigating to /login immediately...');
                         router.replace('/login');
                         console.log('✅ Navigation command sent');
+                        
+                        // Wait for signOut to complete in background (non-blocking)
+                        signOutPromise.catch((error) => {
+                          console.warn('⚠️ Sign out error (non-blocking):', error);
+                        });
                       } catch (error) {
                         console.error('❌ Error during logout:', error);
-                        // Even if signOut fails, try to redirect to login
-                        setTimeout(() => {
-                          console.log('🔍 Fallback: attempting to navigate to /login...');
-                          router.replace('/login');
-                        }, 300);
+                        // Even if error occurs, try to redirect to login
+                        router.replace('/login');
                       }
                     }}
                   >
+                  {loading ? (
+                    <ActivityIndicator size="small" color="#ff4444" />
+                  ) : (
                     <LogOut color="#ff4444" size={18} />
-                    <Text style={styles.logoutText}>Изход</Text>
-                  </TouchableOpacity>
-                </LinearGradient>
+                  )}
+                  <Text style={styles.logoutText}>Изход</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <TouchableOpacity 
@@ -636,6 +645,10 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     gap: 8,
+    marginTop: 12,
+  },
+  logoutButtonDisabled: {
+    opacity: 0.6,
   },
   logoutText: {
     color: '#ff4444',

@@ -31,15 +31,26 @@ export default function HistoryScreen() {
       
       try {
         setLoading(true);
-        const result = await trpcClient.users.violations.query({
-          user_id: user.id,
-          limit: 100,
-          offset: 0,
-        });
+        
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 5000)
+        );
+        
+        const result = await Promise.race([
+          trpcClient.users.violations.query({
+            user_id: user.id,
+            limit: 100,
+            offset: 0,
+          }),
+          timeoutPromise,
+        ]) as any;
         
         setDbHistory(result.violations || []);
-      } catch (error) {
-        console.error('Error loading history from database:', error);
+      } catch (error: any) {
+        // Silently fail - use local history instead
+        console.warn('⚠️ Could not load history from database (using local history):', error?.message || error);
+        setDbHistory([]);
       } finally {
         setLoading(false);
       }
@@ -282,7 +293,6 @@ export default function HistoryScreen() {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
