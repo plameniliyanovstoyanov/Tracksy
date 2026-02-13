@@ -17,6 +17,9 @@ import { validateEnv } from "@/utils/env";
 import * as Notifications from 'expo-notifications';
 import { supabase } from "@/lib/supabase";
 import * as WebBrowser from 'expo-web-browser';
+import { initRevenueCat } from '@/lib/revenuecat';
+import { useSubscriptionStore } from '@/stores/subscription-store';
+import { registerAppOpen } from '@/hooks/usePaywallTrigger';
 
 // КРИТИЧНО: За Android да затваря таба след OAuth login
 WebBrowser.maybeCompleteAuthSession();
@@ -97,6 +100,22 @@ function RootLayoutNav() {
   console.log('🔍 RootLayoutNav rendered:', { hasUser: !!user, isAdmin, segments });
   
 
+  // Инициализация на RevenueCat при промяна на потребителя
+  useEffect(() => {
+    initRevenueCat(user?.id).catch((error) => {
+      console.warn('Failed to init RevenueCat (non-blocking):', error);
+    });
+  }, [user?.id]);
+
+  const { initSubscriptions } = useSubscriptionStore();
+
+  // Първоначално зареждане на абонаменти (entitlements)
+  useEffect(() => {
+    initSubscriptions().catch((error) => {
+      console.warn('Failed to init subscriptions (non-blocking):', error);
+    });
+  }, [initSubscriptions]);
+
   // Зареждане на настройки:
   // - ако имаме user.id И не сме в admin/guest режим → товарим потребителски настройки от база
   // - иначе товарим локални (анонимен или "продължи без профил")
@@ -120,6 +139,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
+      <Stack.Screen name="paywall" options={{ headerShown: false }} />
       <Stack.Screen name="modal" options={{ presentation: "modal" }} />
     </Stack>
   );
@@ -210,7 +230,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     let isMounted = true;
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
     let initComplete = false;
     
     // CRITICAL: Always show app after maximum 3 seconds, no matter what
@@ -233,6 +253,9 @@ export default function RootLayout() {
         } catch (error) {
           // Silent fail - we have fallbacks
         }
+
+        // Регистрираме стартиране на приложението (за paywall логика)
+        registerAppOpen().catch(() => {});
         
         // Fire and forget - don't wait for anything
         // Settings will be loaded in SettingsLoader component after auth is ready

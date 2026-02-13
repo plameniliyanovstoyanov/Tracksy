@@ -149,6 +149,70 @@ yarn start-web
     └── colors.ts         # Цветова схема
 ```
 
+### RevenueCat абонаменти (Premium без реклами)
+
+- Добавена е интеграция с **RevenueCat** чрез `react-native-purchases`.
+- За да работи, трябва да зададеш публичните API ключове в `.env`:
+  - `EXPO_PUBLIC_RC_IOS_API_KEY=appl_...`
+  - `EXPO_PUBLIC_RC_ANDROID_API_KEY=goog_...`
+- Тези стойности се четат в `app.config.js` и са достъпни в рантайм като `process.env.EXPO_PUBLIC_RC_IOS_API_KEY` / `process.env.EXPO_PUBLIC_RC_ANDROID_API_KEY`.
+- В RevenueCat трябва да имаш entitlement с име **"premium"**, който се използва в `lib/revenuecat.ts` и `stores/subscription-store.ts` за определяне на `isPremium` и скриване на рекламите.
+
+#### Обяснение на flow-а
+
+- **Първи старт**
+  - `RootLayout` вика `registerAppOpen()` → броим стартирания в AsyncStorage.
+  - `AuthProvider` зарежда Supabase с `persistSession: true`, така че ако някой се е логнал преди, ще бъде автоматично логнат при нов старт.
+  - Ако не е логнат, може да ползва приложението като анонимен/guest (както до сега); за да купи Premium, задължително трябва да се логне (бутонът за Premium в paywall-а проверява `isAuthenticated` и при нужда праща към `/login`).
+
+- **След 2‑ри / 3‑ти старт и нататък**
+  - При всяко влизане в екрана `Settings`, hook-ът проверява с `shouldShowPaywall(isPremium)`:
+    - минимум 2 стартирания (`app_opens >= 2`),
+    - да не са минали < 24 часа от последния paywall,
+    - и само ако `!isPremium`.
+  - Ако условията са изпълнени → `markPaywallShown()` + `router.push('/paywall')`.
+
+- **Как работи `isPremium` и скриването на реклами**
+  - В `_layout.tsx`, при промяна на `user?.id` се вика `initRevenueCat(user?.id)` → SDK-то се конфигурира с user ID (или анонимен, ако няма).
+  - След това `initSubscriptions()` от `useSubscriptionStore` вади `CustomerInfo` от RevenueCat и изчислява `isPremium = !!customerInfo.entitlements.active["premium"]`.
+  - При всяка промяна на `isPremium` store-ът:
+    - обновява локалния state (`isPremium`, `customerInfo`, `lastUpdatedAt`),
+    - прави лек Supabase `update` към таблица `profiles` (`is_premium: isPremium`, по `id = user.id`), ако има логнат Supabase user.
+  - Всяко място, където по-късно ще интегрираш реклами, може да ползва:
+
+    ```ts
+    const { isPremium } = useSubscriptionStore();
+    const shouldShowAds = !isPremium;
+    ```
+
+  - UI-то винаги стъпва директно на RevenueCat `isPremium`; Supabase sync е само за бекенда.
+
+### AdMob реклами (само за Free потребители)
+
+Приложението интегрира **Google AdMob** за показване на interstitial реклами само на безплатните потребители:
+
+- **Пакет**: `react-native-google-mobile-ads` (v16+)
+- **Основна логика**: `lib/ads.ts`
+- **Конфигурация**: `app.config.js` (Android/iOS App ID)
+- **Документация**: Виж [`docs/ADMOB_SETUP.md`](./docs/ADMOB_SETUP.md) за пълни инструкции
+
+#### Кога се показват рекламите
+
+- **При стартиране на приложението** (само веднъж за сесия) - само за non-premium
+- **След приключване на сектор** - само за non-premium
+
+Premium потребителите **никога** не виждат реклами.
+
+#### Production настройка
+
+1. Създай Android app в [AdMob Console](https://apps.admob.google.com/)
+2. Създай **Interstitial Ad Unit**
+3. Обнови `app.config.js` с App ID
+4. Обнови `lib/ads.ts` с Ad Unit ID
+5. (Опционално) Повтори за iOS когато планираш iOS build
+
+За подробни стъпки виж [`docs/ADMOB_SETUP.md`](./docs/ADMOB_SETUP.md).
+
 ### Добавяне на нови сектори
 
 Редактирайте `data/sectors.ts`:

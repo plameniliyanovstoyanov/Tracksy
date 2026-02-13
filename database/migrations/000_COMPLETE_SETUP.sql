@@ -181,13 +181,3 @@ CREATE TRIGGER update_user_settings_timestamp
   BEFORE UPDATE ON user_settings
   FOR EACH ROW
   EXECUTE FUNCTION update_user_settings_updated_at();
-
--- ============================================
--- ГОТОВО! ✅
--- ============================================
--- Сега отиди на Table Editor и трябва да видиш:
--- - sectors
--- - user_profiles
--- - violations
--- - user_settings
-

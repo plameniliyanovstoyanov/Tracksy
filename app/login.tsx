@@ -166,7 +166,7 @@ export default function LoginScreen() {
               <Zap size={48} color="#00FF88" />
               <View style={styles.logoGlow} />
             </View>
-            <Text style={styles.title}>SPEED TRACKER</Text>
+            <Text style={styles.title}>Tracksy</Text>
             <Text style={styles.subtitle}>Влез в профила си за да продължиш</Text>
           </View>
 

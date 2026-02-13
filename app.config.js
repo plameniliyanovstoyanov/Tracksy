@@ -20,11 +20,18 @@ module.exports = {
       supportsTablet: true,
       bundleIdentifier: "bg.tracksy.app",
       buildNumber: "10",
+      config: {
+        googleMobileAdsAppId: "ca-app-pub-4016172638513790~8457519952", // TODO: Replace with iOS App ID when iOS app is created in AdMob
+      },
       infoPlist: {
         NSLocationAlwaysAndWhenInUseUsageDescription: "Allow $(PRODUCT_NAME) to use your location.",
         NSLocationAlwaysUsageDescription: "Allow $(PRODUCT_NAME) to use your location.",
         NSLocationWhenInUseUsageDescription: "Allow $(PRODUCT_NAME) to use your location.",
-        UIBackgroundModes: ["location"]
+        UIBackgroundModes: ["location"],
+        GADApplicationIdentifier: "ca-app-pub-4016172638513790~8457519952", // TODO: Replace with iOS App ID
+        SKAdNetworkItems: [
+          { SKAdNetworkIdentifier: "cstr6suwn9.skadnetwork" }
+        ]
       },
       entitlements: {
         "com.apple.developer.networking.wifi-info": true
@@ -36,6 +43,9 @@ module.exports = {
         backgroundColor: "#ffffff"
       },
       package: "bg.tracksy.app",
+      config: {
+        googleMobileAdsAppId: "ca-app-pub-4016172638513790~8457519952",
+      },
       intentFilters: [
         {
           action: "VIEW",
@@ -90,6 +100,14 @@ module.exports = {
           defaultChannel: "default",
           enableBackgroundRemoteNotifications: false
         }
+      ],
+      // react-native-google-mobile-ads config plugin
+      [
+        "react-native-google-mobile-ads",
+        {
+          androidAppId: "ca-app-pub-4016172638513790~8457519952",
+          iosAppId: "ca-app-pub-4016172638513790~8457519952" // TODO: смени с реален iOS App ID когато създадеш iOS app в AdMob
+        }
       ]
     ],
     experiments: {
@@ -109,7 +127,10 @@ module.exports = {
       // Also set as EXPO_PUBLIC_* for runtime access
       EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL || "https://ztlyoketfstcsjylvfyq.supabase.co",
       EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI",
-      EXPO_PUBLIC_MAPBOX_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ"
+      EXPO_PUBLIC_MAPBOX_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoicGxhbWVuc3RveWFub3YiLCJhIjoiY21mcGtzdTh6MGMwdTJqc2NqNjB3ZjZvcSJ9.mYM2IeJEeCJkeaR2TVd4BQ",
+      // RevenueCat публични ключове за клиентския SDK
+      EXPO_PUBLIC_RC_IOS_API_KEY: process.env.EXPO_PUBLIC_RC_IOS_API_KEY,
+      EXPO_PUBLIC_RC_ANDROID_API_KEY: process.env.EXPO_PUBLIC_RC_ANDROID_API_KEY
     }
   }
 };

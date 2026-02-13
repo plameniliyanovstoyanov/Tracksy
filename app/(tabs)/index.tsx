@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import { MapPin, Navigation, Clock } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useSpeedStore } from '@/stores/speed-store';
 import { useSectorStore } from '@/stores/sector-store';
+import { useSubscriptionStore } from '@/stores/subscription-store';
+import { showAppStartAd, showPostSectorAd } from '@/lib/ads';
 import { UnifiedSectorDisplay } from '@/components/UnifiedSectorDisplay';
 import { MapViewComponent } from '@/components/MapView';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
@@ -40,6 +42,9 @@ export default function HomeScreen() {
     checkSectorExit,
     loadSectorRoutes
   } = useSectorStore();
+
+  const { isPremium } = useSubscriptionStore();
+  const previousSectorRef = useRef<typeof currentSector | null>(currentSector);
   
   const { deviceId } = useDevice();
 
@@ -243,6 +248,30 @@ export default function HomeScreen() {
       stopTracking();
     };
   }, [startTracking, stopTracking, handleLocationUpdate, initializeNotifications]);
+
+  // Показване на реклама при стартиране на приложението (само веднъж, само за non-premium)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    showAppStartAd(isPremium).catch((error) => {
+      console.warn('Failed to show app start ad (non-blocking):', error);
+    });
+  }, [isPremium]);
+
+  // Показване на реклама след приключване на сектор (когато currentSector стане null)
+  useEffect(() => {
+    const previousSector = previousSectorRef.current;
+
+    if (previousSector && !currentSector) {
+      if (Platform.OS !== 'web') {
+        showPostSectorAd(isPremium).catch((error) => {
+          console.warn('Failed to show post-sector ad (non-blocking):', error);
+        });
+      }
+    }
+
+    previousSectorRef.current = currentSector;
+  }, [currentSector, isPremium]);
 
   if (errorMsg) {
     return (

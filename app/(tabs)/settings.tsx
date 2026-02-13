@@ -18,6 +18,8 @@ import { useBatteryOptimization } from '@/stores/battery-optimization';
 import { useAuth } from '@/stores/auth-store';
 import { Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSubscriptionStore } from '@/stores/subscription-store';
+import { shouldShowPaywall, markPaywallShown } from '@/hooks/usePaywallTrigger';
 
 export default function SettingsScreen() {
   const offlineStore = useOfflineStore();
@@ -25,6 +27,7 @@ export default function SettingsScreen() {
   const { user, isAuthenticated, signOut, loading } = useAuth();
   const router = useRouter();
   const { loadFromStorage, saveToStorage } = useSettingsStore();
+  const { isPremium } = useSubscriptionStore();
   
   React.useEffect(() => {
     offlineStore.initializeOfflineMode();
@@ -44,6 +47,17 @@ export default function SettingsScreen() {
       });
     }
   }, [isAuthenticated, user?.id]);
+
+  // Safe paywall trigger логика
+  React.useEffect(() => {
+    (async () => {
+      const show = await shouldShowPaywall(isPremium);
+      if (show) {
+        await markPaywallShown();
+        router.push('/paywall');
+      }
+    })();
+  }, [isPremium, router]);
   
   const {
     notificationsEnabled,
