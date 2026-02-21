@@ -20,6 +20,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { initRevenueCat } from '@/lib/revenuecat';
 import { useSubscriptionStore } from '@/stores/subscription-store';
 import { registerAppOpen } from '@/hooks/usePaywallTrigger';
+import { logger } from '@/utils/logger';
 
 // КРИТИЧНО: За Android да затваря таба след OAuth login
 WebBrowser.maybeCompleteAuthSession();
@@ -60,7 +61,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('💥 ErrorBoundary caught an error:', error, errorInfo);
+    logger.error('💥 ErrorBoundary caught an error:', error, errorInfo);
   }
 
   render(): ReactNode {
@@ -90,20 +91,20 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
 
 function RootLayoutNav() {
-  console.log('🔍 RootLayoutNav starting...');
+  logger.log('🔍 RootLayoutNav starting...');
   
   const { user, isAdmin } = useAuth();
   const loadSettings = useSettingsStore((state) => state.loadFromStorage);
   const segments = useSegments();
   const router = useRouter();
   
-  console.log('🔍 RootLayoutNav rendered:', { hasUser: !!user, isAdmin, segments });
+  logger.log('🔍 RootLayoutNav rendered:', { hasUser: !!user, isAdmin, segments });
   
 
   // Инициализация на RevenueCat при промяна на потребителя
   useEffect(() => {
     initRevenueCat(user?.id).catch((error) => {
-      console.warn('Failed to init RevenueCat (non-blocking):', error);
+      logger.warn('Failed to init RevenueCat (non-blocking):', error);
     });
   }, [user?.id]);
 
@@ -112,7 +113,7 @@ function RootLayoutNav() {
   // Първоначално зареждане на абонаменти (entitlements)
   useEffect(() => {
     initSubscriptions().catch((error) => {
-      console.warn('Failed to init subscriptions (non-blocking):', error);
+      logger.warn('Failed to init subscriptions (non-blocking):', error);
     });
   }, [initSubscriptions]);
 
@@ -122,17 +123,17 @@ function RootLayoutNav() {
   useEffect(() => {
     if (user?.id && !isAdmin) {
       loadSettings(user.id).catch(err => {
-        console.error('Failed to load settings:', err);
+        logger.error('Failed to load settings:', err);
       });
     } else {
       loadSettings().catch(err => {
-        console.error('Failed to load settings:', err);
+        logger.error('Failed to load settings:', err);
       });
     }
   }, [user?.id, isAdmin, loadSettings]);
 
 
-  console.log('🔍 RootLayoutNav returning Stack navigator');
+  logger.log('🔍 RootLayoutNav returning Stack navigator');
   
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
@@ -215,7 +216,7 @@ const styles = StyleSheet.create({
 });
 
 export default function RootLayout() {
-  console.log('🚀 RootLayout component starting...');
+  logger.log('🚀 RootLayout component starting...');
   
   const loadSpeedData = useSpeedStore((state) => state.loadFromStorage);
   const loadSectorData = useSectorStore((state) => state.loadFromStorage);
@@ -226,7 +227,7 @@ export default function RootLayout() {
   const [initializationError, setInitializationError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   
-  console.log('✅ RootLayout hooks initialized');
+  logger.log('✅ RootLayout hooks initialized');
 
   useEffect(() => {
     let isMounted = true;
@@ -324,10 +325,10 @@ export default function RootLayout() {
 
   // CRITICAL: Wrap everything in try-catch to prevent white screen
   // If anything fails, at least show error screen
-  console.log('🔍 RootLayout rendering, isReady:', isReady);
+  logger.log('🔍 RootLayout rendering, isReady:', isReady);
   
   try {
-    console.log('🔍 RootLayout attempting to render app structure');
+    logger.log('🔍 RootLayout attempting to render app structure');
     return (
       <ErrorBoundary>
         <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -348,7 +349,7 @@ export default function RootLayout() {
       </ErrorBoundary>
     );
   } catch (renderError) {
-    console.error('❌ RootLayout render error:', renderError);
+    logger.error('❌ RootLayout render error:', renderError);
     // If rendering fails completely, show error screen instead of white screen
     return (
       <View style={styles.errorContainer}>

@@ -55,11 +55,13 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   provider_id TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  is_premium BOOLEAN DEFAULT false
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_profiles_email ON user_profiles(email);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_provider ON user_profiles(provider);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_is_premium ON user_profiles(is_premium);
 
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 

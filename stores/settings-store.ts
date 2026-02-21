@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { BackgroundLocationService } from './location-service';
 import { supabase } from '@/lib/supabase';
+import { logger } from '@/utils/logger';
 
 interface SettingsState {
   notificationsEnabled: boolean;
@@ -104,7 +105,7 @@ export const useSettingsStore = create(
           const success = await BackgroundLocationService.startBackgroundLocationTracking();
           if (success) {
             set({ backgroundTrackingActive: true });
-            console.log('Background tracking started successfully');
+            logger.log('Background tracking started successfully');
           } else {
             // Ако не успее да стартира, изключваме настройката
             set({ 
@@ -116,7 +117,7 @@ export const useSettingsStore = create(
           }
           return success;
         } catch (error) {
-          console.error('Failed to start background tracking:', error);
+          logger.error('Failed to start background tracking:', error);
           // При грешка изключваме настройката
           set({ 
             backgroundTrackingEnabled: false,
@@ -132,9 +133,9 @@ export const useSettingsStore = create(
         try {
           await BackgroundLocationService.stopBackgroundLocationTracking();
           set({ backgroundTrackingActive: false });
-          console.log('Background tracking stopped');
+          logger.log('Background tracking stopped');
         } catch (error) {
-          console.error('Failed to stop background tracking:', error);
+          logger.error('Failed to stop background tracking:', error);
         }
       },
 
@@ -143,7 +144,7 @@ export const useSettingsStore = create(
           const isRunning = await BackgroundLocationService.isBackgroundLocationRunning();
           set({ backgroundTrackingActive: isRunning });
         } catch (error) {
-          console.error('Failed to check background tracking status:', error);
+          logger.error('Failed to check background tracking status:', error);
         }
       },
 
@@ -155,7 +156,7 @@ export const useSettingsStore = create(
               await (get() as SettingsState & SettingsActions).loadFromDatabase(userId);
               return; // If successful, don't load from local storage
             } catch (error) {
-              console.warn('Failed to load settings from database, falling back to local storage:', error);
+              logger.warn('Failed to load settings from database, falling back to local storage:', error);
             }
           }
           
@@ -175,11 +176,11 @@ export const useSettingsStore = create(
             // Check if background tracking is actually running (in background)
             const actions = get() as SettingsState & SettingsActions;
             actions.checkBackgroundTrackingStatus().catch(err => {
-              console.error('Failed to check background tracking status:', err);
+              logger.error('Failed to check background tracking status:', err);
             });
           }
         } catch (error) {
-          console.error('Failed to load settings from storage:', error);
+          logger.error('Failed to load settings from storage:', error);
         }
       },
 
@@ -202,12 +203,12 @@ export const useSettingsStore = create(
             try {
               await (get() as SettingsState & SettingsActions).saveToDatabase(userId);
             } catch (error) {
-              console.warn('Failed to save settings to database:', error);
+              logger.warn('Failed to save settings to database:', error);
               // Don't throw - local storage save was successful
             }
           }
         } catch (error) {
-          console.error('Failed to save settings to storage:', error);
+          logger.error('Failed to save settings to storage:', error);
         }
       },
 
@@ -221,7 +222,7 @@ export const useSettingsStore = create(
 
           if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
             // Това не е критична грешка за UX – просто ще ползваме локални/default настройки
-            console.warn('Error fetching user settings (fallback to defaults):', error);
+            logger.warn('Error fetching user settings (fallback to defaults):', error);
             return;
           }
 
@@ -256,13 +257,13 @@ export const useSettingsStore = create(
           
           // Check if background tracking is actually running
           actions.checkBackgroundTrackingStatus().catch(err => {
-            console.error('Failed to check background tracking status:', err);
+            logger.error('Failed to check background tracking status:', err);
           });
           
-          console.log('Settings loaded from database');
+          logger.log('Settings loaded from database');
         } catch (error) {
           // Не чупим приложението – само логваме и оставяме локалните/default настройки
-          console.warn('Failed to load settings from database (non-blocking):', error);
+          logger.warn('Failed to load settings from database (non-blocking):', error);
         }
       },
 
@@ -285,20 +286,20 @@ export const useSettingsStore = create(
             });
 
           if (error) {
-            console.error('Error saving user settings:', error);
+            logger.error('Error saving user settings:', error);
             throw new Error('Failed to save user settings');
           }
           
-          console.log('Settings saved to database');
+          logger.log('Settings saved to database');
         } catch (error) {
-          console.error('Failed to save settings to database:', error);
+          logger.error('Failed to save settings to database:', error);
           throw error;
         }
       },
 
       requestNotificationPermissions: async () => {
         if (Platform.OS === 'web') {
-          console.log('Notifications not supported on web');
+          logger.log('Notifications not supported on web');
           return;
         }
 
@@ -326,13 +327,13 @@ export const useSettingsStore = create(
             });
           }
           if (status !== 'granted') {
-            console.log('Notification permissions not granted');
+            logger.log('Notification permissions not granted');
             set({ notificationsEnabled: false });
             const actions = get() as SettingsState & SettingsActions;
             actions.saveToStorage();
           }
         } catch (error) {
-          console.error('Failed to request notification permissions:', error);
+          logger.error('Failed to request notification permissions:', error);
         }
       },
 
@@ -365,7 +366,7 @@ export const getNotificationSettings = async (): Promise<{
       };
     }
   } catch (error) {
-    console.error('Failed to load settings:', error);
+    logger.error('Failed to load settings:', error);
   }
   
   // Default values

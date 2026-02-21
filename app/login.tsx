@@ -13,6 +13,7 @@ import {
 import { useAuth } from '@/stores/auth-store';
 import { useRouter } from 'expo-router';
 import { Mail, Chrome, Zap, Shield } from 'lucide-react-native';
+import { logger } from '@/utils/logger';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
@@ -26,7 +27,7 @@ export default function LoginScreen() {
     if (authLoading) return;
 
     if (isAuthenticated) {
-      console.log('✅ User authenticated, navigating to tabs...');
+      logger.log('✅ User authenticated, navigating to tabs...');
       router.replace('/(tabs)');
     }
   }, [authLoading, isAuthenticated, router]);

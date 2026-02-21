@@ -12,6 +12,7 @@ import {
   ROUTE_SNAP_THRESHOLD_M,
 } from '@/constants/proximity';
 import { computeRecommendedSpeedKmH } from '@/utils/speed-calculations';
+import { logger } from '@/utils/logger';
 
 interface Location {
   latitude: number;
@@ -49,6 +50,7 @@ interface SectorState {
   lastNotificationThreshold: number; // 0, 0.33, 0.66 to track which notifications were sent
   sectorTotalDistance: number; // Total distance of the sector route in meters
   distanceTraveled: number; // Distance traveled in current sector
+  entryDistanceFromStart: number | null; // Distance from route start at entry point (for direction-independent progress)
   recommendedSpeed: number | null; // Recommended speed to stay within limit
   lastSpeedUpdateTime: number | null; // Last time we updated speed for time-based average calculation
   lastEntryNotificationTime: number; // Last time we sent entry notification (debounce)
@@ -233,6 +235,7 @@ export const useSectorStore = create(
       lastNotificationThreshold: 0,
       sectorTotalDistance: 0,
       distanceTraveled: 0,
+      entryDistanceFromStart: null as number | null,
       recommendedSpeed: null as number | null,
       lastSpeedUpdateTime: null as number | null,
       lastEntryNotificationTime: 0,
@@ -314,6 +317,7 @@ export const useSectorStore = create(
                 lastNotificationThreshold: 0,
                 sectorTotalDistance: totalDistance,
                 distanceTraveled: 0,
+                entryDistanceFromStart: null,
                 recommendedSpeed: null,
                 lastSpeedUpdateTime: Date.now()
               });
@@ -331,7 +335,7 @@ export const useSectorStore = create(
             }
           }
         } catch (error) {
-          console.error('Error checking sector entry:', error);
+          logger.error('Error checking sector entry:', error);
         }
       },
 
@@ -388,7 +392,7 @@ export const useSectorStore = create(
             if (deviceId || userId) {
               const actions = get() as SectorState & SectorActions;
               actions.saveViolationToDatabase(historyEntry, location, deviceId || '', userId).catch(error => {
-                console.error('Failed to save violation to database:', error);
+                logger.error('Failed to save violation to database:', error);
               });
             }
             
@@ -410,6 +414,7 @@ export const useSectorStore = create(
               lastNotificationThreshold: 0,
               sectorTotalDistance: 0,
               distanceTraveled: 0,
+              entryDistanceFromStart: null,
               recommendedSpeed: null,
               lastSpeedUpdateTime: null
             });
@@ -418,7 +423,7 @@ export const useSectorStore = create(
             set({ exitConfirmationCount: newExitCount, lastSectorCheckTime: now });
           }
         } catch (error) {
-          console.error('Error checking sector exit:', error);
+          logger.error('Error checking sector exit:', error);
         }
       },
 
@@ -474,13 +479,13 @@ export const useSectorStore = create(
             });
           }
         } catch (error) {
-          console.error('Error updating sector speed:', error);
+          logger.error('Error updating sector speed:', error);
         }
       },
 
       updateSectorProgress: async (location: Location) => {
         const state = get();
-        const { currentSector, sectorTotalDistance, lastNotificationThreshold, distanceTraveled } = state;
+        const { currentSector, sectorTotalDistance, lastNotificationThreshold, entryDistanceFromStart } = state;
         
         if (!currentSector || sectorTotalDistance === 0) return;
         
@@ -488,9 +493,9 @@ export const useSectorStore = create(
           const sectorWithRoute = currentSector as SectorWithRoute;
           let distanceFromStart = 0;
           
-          // Calculate distance traveled along the route
+          // Изчисляваме разстоянието от началото на маршрута до текущата позиция
           if (sectorWithRoute.routeCoordinates && sectorWithRoute.routeCoordinates.length > 1) {
-            // Find closest point on route and calculate distance from start
+            // Намираме най-близкия сегмент от маршрута
             let minDistance = Infinity;
             let closestSegmentIndex = 0;
             
@@ -507,32 +512,20 @@ export const useSectorStore = create(
               }
             }
             
-            // Calculate distance from start to closest segment
+            // Сумираме разстоянията от началото на маршрута до най-близкия сегмент
             for (let i = 0; i < closestSegmentIndex; i++) {
               const [lng1, lat1] = sectorWithRoute.routeCoordinates[i];
               const [lng2, lat2] = sectorWithRoute.routeCoordinates[i + 1];
               distanceFromStart += getDistance(lat1, lng1, lat2, lng2);
             }
             
-            // Add partial distance on current segment
+            // Добавяме частичното разстояние в текущия сегмент
             if (closestSegmentIndex < sectorWithRoute.routeCoordinates.length - 1) {
               const [lng1, lat1] = sectorWithRoute.routeCoordinates[closestSegmentIndex];
               distanceFromStart += getDistance(lat1, lng1, location.latitude, location.longitude);
             }
-            
-            // When we just entered (distanceTraveled === 0), reset to start from beginning
-            // This ensures progress starts from 0% instead of potentially showing 100%
-            if (distanceTraveled === 0) {
-              // Reset to calculate from actual start point
-              distanceFromStart = getDistance(
-                currentSector.startPoint.lat,
-                currentSector.startPoint.lng,
-                location.latitude,
-                location.longitude
-              );
-            }
           } else {
-            // Fallback to straight line distance from start
+            // Fallback: права линия от startPoint
             distanceFromStart = getDistance(
               currentSector.startPoint.lat,
               currentSector.startPoint.lng,
@@ -541,44 +534,41 @@ export const useSectorStore = create(
             );
           }
           
-          // Calculate progress (0 to 1)
-          // When we just entered (distanceTraveled === 0), progress MUST be 0
-          // This ensures we always start from 0% when entering a sector
-          let progress: number;
-          let newDistanceTraveled: number;
+          // ─── Direction-independent progress ───────────────────────
+          // При първия GPS ъпдейт след влизане запомняме entryDistanceFromStart.
+          // Прогресът е абсолютната разлика между текущата позиция и входната точка,
+          // делена на общата дължина. Така прогресът ВИНАГИ тръгва от 0 и расте,
+          // без значение от коя страна влизаш в сектора.
           
-          if (distanceTraveled === 0) {
-            // Just entered - progress is ALWAYS 0, regardless of physical location
-            // This prevents showing 100% when entering near the end of a sector
+          let progress: number;
+          let currentEntryDistance = entryDistanceFromStart;
+          
+          if (currentEntryDistance === null) {
+            // Първи GPS ъпдейт след влизане – запомняме входната точка
+            currentEntryDistance = distanceFromStart;
             progress = 0;
-            // Start tracking distance from this point forward
-            // Use a small initial value to mark that we've started tracking
-            newDistanceTraveled = Math.max(0, distanceFromStart);
           } else {
-            // Already traveling - use calculated distance along route
-            progress = Math.min(1, Math.max(0, distanceFromStart / sectorTotalDistance));
-            newDistanceTraveled = distanceFromStart;
+            // Изминато разстояние = |текуща позиция - входна позиция| по маршрута
+            const traveled = Math.abs(distanceFromStart - currentEntryDistance);
+            progress = Math.min(1, Math.max(0, traveled / sectorTotalDistance));
           }
           
-          // Check if we've crossed the 50% notification threshold
+          // Изминато разстояние в метри (за recommendedSpeed и UI)
+          const newDistanceTraveled = Math.abs(distanceFromStart - (currentEntryDistance ?? distanceFromStart));
+          
+          // Проверка дали сме минали 50% (за нотификации)
           const threshold = 0.5;
           if (progress >= threshold && lastNotificationThreshold < threshold) {
-            // Send notification
-            const { currentSectorAverageSpeed, recommendedSpeed } = state;
-            const isExceeding = currentSectorAverageSpeed > currentSector.speedLimit;
-            
-            // NOTIFICATIONS: 50% progress нотификацията се праща от BG task
-            // UI store само обновява прогреса
-            
             set({ lastNotificationThreshold: threshold });
           }
           
           set({ 
             sectorProgress: progress,
-            distanceTraveled: newDistanceTraveled
+            distanceTraveled: newDistanceTraveled,
+            entryDistanceFromStart: currentEntryDistance
           });
         } catch (error) {
-          console.error('Error updating sector progress:', error);
+          logger.error('Error updating sector progress:', error);
         }
       },
 
@@ -586,7 +576,7 @@ export const useSectorStore = create(
         // Force reload by clearing cache first
         const { clearRouteCache, clearRouteCacheForSector } = await import('@/utils/mapbox-directions');
         clearRouteCache();
-        console.log('🔄 Force reloading sector routes (cache cleared)...');
+        logger.log('🔄 Force reloading sector routes (cache cleared)...');
         
         // Clear cache for updated sectors
         clearRouteCacheForSector('27'); // Цариградско шосе - посока 1
@@ -600,7 +590,7 @@ export const useSectorStore = create(
 
       loadSectorRoutes: async (maxRetries: number = 3) => {
         try {
-          console.log(`🔄 Loading sector routes from Mapbox... (attempt ${4 - maxRetries}/3)`);
+          logger.log(`🔄 Loading sector routes from Mapbox... (attempt ${4 - maxRetries}/3)`);
           
           // Get current sectors from state (may be loaded from backend or local)
           const { sectors: currentSectors } = get();
@@ -608,7 +598,7 @@ export const useSectorStore = create(
           // Check if we have environment loaded
           const { ENV } = await import('@/utils/env');
           if (!ENV.mapboxToken || ENV.mapboxToken === '') {
-            console.error('❌ Mapbox token not available - cannot load routes');
+            logger.error('❌ Mapbox token not available - cannot load routes');
             // Keep sectors without routes - will retry when token is available
             return;
           }
@@ -622,7 +612,7 @@ export const useSectorStore = create(
               }
               
               if (retriesLeft > 0) {
-                console.log(`⚠️ Retrying route for ${sector.name}... (${retriesLeft} retries left)`);
+                logger.log(`⚠️ Retrying route for ${sector.name}... (${retriesLeft} retries left)`);
                 await new Promise(resolve => setTimeout(resolve, 1000 * (3 - retriesLeft))); // Exponential backoff
                 return fetchRouteWithRetry(sector, retriesLeft - 1);
               }
@@ -630,7 +620,7 @@ export const useSectorStore = create(
               return null;
             } catch (error) {
               if (retriesLeft > 0) {
-                console.log(`⚠️ Error fetching route for ${sector.name}, retrying... (${retriesLeft} retries left)`);
+                logger.log(`⚠️ Error fetching route for ${sector.name}, retrying... (${retriesLeft} retries left)`);
                 await new Promise(resolve => setTimeout(resolve, 1000 * (3 - retriesLeft)));
                 return fetchRouteWithRetry(sector, retriesLeft - 1);
               }
@@ -647,33 +637,33 @@ export const useSectorStore = create(
           
           for (let i = 0; i < sectorsToProcess.length; i += batchSize) {
             const batch = sectorsToProcess.slice(i, i + batchSize);
-            console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1} (${batch.length} sectors)...`);
+            logger.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1} (${batch.length} sectors)...`);
             
             const batchResults = await Promise.allSettled(
               batch.map(async (sector) => {
                 // Skip if route already exists
                 const sectorWithRoute = sector as SectorWithRoute;
                 if (sectorWithRoute.routeCoordinates && sectorWithRoute.routeCoordinates.length > 2) {
-                  console.log(`⏭️ Skipping ${sector.name} - route already loaded`);
+                  logger.log(`⏭️ Skipping ${sector.name} - route already loaded`);
                   return sectorWithRoute;
                 }
                 
                 try {
-                  console.log(`🚗 Fetching route for sector ${sector.name}...`);
-                  console.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
-                  console.log(`📍 To: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
+                  logger.log(`🚗 Fetching route for sector ${sector.name}...`);
+                  logger.log(`📍 From: ${sector.startPoint.lat}, ${sector.startPoint.lng}`);
+                  logger.log(`📍 To: ${sector.endPoint.lat}, ${sector.endPoint.lng}`);
                   
                   const route = await fetchRouteWithRetry(sector);
                   
                   if (route && route.length > 2) {
-                    console.log(`✅ Got ${route.length} points for sector ${sector.name}`);
+                    logger.log(`✅ Got ${route.length} points for sector ${sector.name}`);
                     return { ...sector, routeCoordinates: route } as SectorWithRoute;
                   } else {
-                    console.error(`❌ Failed to load route for ${sector.name} after retries`);
+                    logger.error(`❌ Failed to load route for ${sector.name} after retries`);
                     return { ...sector, routeCoordinates: sectorWithRoute.routeCoordinates } as SectorWithRoute;
                   }
                 } catch (error) {
-                  console.error(`❌ Error loading route for ${sector.name}:`, error);
+                  logger.error(`❌ Error loading route for ${sector.name}:`, error);
                   return { ...sector, routeCoordinates: sectorWithRoute.routeCoordinates } as SectorWithRoute;
                 }
               })
@@ -684,7 +674,7 @@ export const useSectorStore = create(
               if (result.status === 'fulfilled') {
                 loadedSectors.push(result.value);
               } else {
-                console.error(`❌ Promise rejected for sector ${batch[idx].name}:`, result.reason);
+                logger.error(`❌ Promise rejected for sector ${batch[idx].name}:`, result.reason);
                 loadedSectors.push({
                   ...batch[idx],
                   routeCoordinates: (batch[idx] as SectorWithRoute).routeCoordinates
@@ -702,19 +692,19 @@ export const useSectorStore = create(
           const successCount = loadedSectors.filter(s => s.routeCoordinates && s.routeCoordinates.length > 2).length;
           const pendingCount = loadedSectors.length - successCount;
           
-          console.log(`✅ Loaded ${successCount}/${sectorsToProcess.length} sector routes successfully`);
+          logger.log(`✅ Loaded ${successCount}/${sectorsToProcess.length} sector routes successfully`);
           
           if (pendingCount > 0 && maxRetries > 0) {
-            console.log(`⏳ ${pendingCount} sectors failed - retrying in 2 seconds...`);
+            logger.log(`⏳ ${pendingCount} sectors failed - retrying in 2 seconds...`);
             // Retry failed sectors after a delay
             setTimeout(() => {
               const actions = get() as SectorState & SectorActions;
               actions.loadSectorRoutes(maxRetries - 1).catch(err => {
-                console.error('❌ Retry failed:', err);
+                logger.error('❌ Retry failed:', err);
               });
             }, 2000);
           } else if (pendingCount > 0) {
-            console.error(`❌ ${pendingCount} sectors failed to load routes after all retries`);
+            logger.error(`❌ ${pendingCount} sectors failed to load routes after all retries`);
           }
           
           // Always update state, even if some routes failed
@@ -723,12 +713,12 @@ export const useSectorStore = create(
           // Запазваме секторите с маршрути в AsyncStorage за background task
           try {
             await AsyncStorage.setItem('sectors-with-routes', JSON.stringify(loadedSectors));
-            console.log('Sectors with routes saved to AsyncStorage');
+            logger.log('Sectors with routes saved to AsyncStorage');
           } catch (error) {
-            console.error('Failed to save sectors with routes to AsyncStorage:', error);
+            logger.error('Failed to save sectors with routes to AsyncStorage:', error);
           }
         } catch (error) {
-          console.error('❌ Error loading sector routes:', error);
+          logger.error('❌ Error loading sector routes:', error);
           // Don't create fallback - leave sectors without routeCoordinates so they can be loaded later
           const { sectors: currentSectors } = get();
           const sectorsWithoutRoutes = (currentSectors.length > 0 ? currentSectors : initialSectors).map(sector => ({
@@ -736,48 +726,48 @@ export const useSectorStore = create(
             routeCoordinates: (sector as SectorWithRoute).routeCoordinates
           } as SectorWithRoute));
           set({ sectors: sectorsWithoutRoutes });
-          console.log('⏳ Sectors initialized without routes - will load routes on next attempt');
+          logger.log('⏳ Sectors initialized without routes - will load routes on next attempt');
         }
       },
 
       loadFromStorage: async () => {
         try {
-          console.log('Loading sectors from backend...');
+          logger.log('Loading sectors from backend...');
           
           // Try to load sectors from backend first
           try {
             const result = await trpcClient.sectors.list.query();
             
             if (result && result.sectors && result.sectors.length > 0) {
-              console.log(`✅ Loaded ${result.sectors.length} sectors from backend`);
+              logger.log(`✅ Loaded ${result.sectors.length} sectors from backend`);
               set({ sectors: result.sectors as SectorWithRoute[] });
               
               // Load routes in the background (don't wait for it)
               const actions = get() as SectorState & SectorActions;
               actions.loadSectorRoutes().catch(error => {
-                console.error('Failed to load sector routes in background:', error);
+                logger.error('Failed to load sector routes in background:', error);
               });
-              console.log('✅ Sectors initialized from backend, routes loading in background');
+              logger.log('✅ Sectors initialized from backend, routes loading in background');
               return;
             } else {
-              console.warn('⚠️ Backend returned empty sectors array, falling back to local sectors');
+              logger.warn('⚠️ Backend returned empty sectors array, falling back to local sectors');
             }
           } catch (backendError) {
-            console.warn('⚠️ Failed to load sectors from backend, falling back to local sectors:', backendError);
+            logger.warn('⚠️ Failed to load sectors from backend, falling back to local sectors:', backendError);
           }
           
           // Fallback to local sectors if backend fails or returns empty
-          console.log('Using local sectors as fallback...');
+          logger.log('Using local sectors as fallback...');
           set({ sectors: initialSectors as SectorWithRoute[] });
           
           // Load routes in the background (don't wait for it)
           const actions = get() as SectorState & SectorActions;
           actions.loadSectorRoutes().catch(error => {
-            console.error('Failed to load sector routes in background:', error);
+            logger.error('Failed to load sector routes in background:', error);
           });
-          console.log('✅ Sectors initialized from local data, routes loading in background');
+          logger.log('✅ Sectors initialized from local data, routes loading in background');
         } catch (error) {
-          console.error('Failed to load sectors:', error);
+          logger.error('Failed to load sectors:', error);
           // Final fallback to default sectors
           set({ sectors: initialSectors as SectorWithRoute[] });
         }
@@ -792,7 +782,7 @@ export const useSectorStore = create(
       
       saveViolationToDatabase: async (entry: SectorHistoryEntry, location: Location, deviceId: string, userId?: string) => {
         try {
-          console.log('Saving violation to database:', {
+          logger.log('Saving violation to database:', {
             userId,
             deviceId,
             sectorId: entry.sectorId,
@@ -820,9 +810,9 @@ export const useSectorStore = create(
             duration: entry.duration,
           });
           
-          console.log('Violation saved successfully:', result);
+          logger.log('Violation saved successfully:', result);
         } catch (error) {
-          console.error('Error saving violation to database:', error);
+          logger.error('Error saving violation to database:', error);
           // Don't throw error to avoid breaking the app flow
         }
       },
@@ -832,26 +822,26 @@ export const useSectorStore = create(
           const currentSectorStr = await AsyncStorage.getItem('current-sector');
           const sectorMonitorDataStr = await AsyncStorage.getItem('sector-monitor-data');
           
-          console.log('🔄 Syncing with background task...');
-          console.log('  - current-sector:', currentSectorStr ? 'EXISTS' : 'NULL');
-          console.log('  - sector-monitor-data:', sectorMonitorDataStr ? 'EXISTS' : 'NULL');
+          logger.log('🔄 Syncing with background task...');
+          logger.log('  - current-sector:', currentSectorStr ? 'EXISTS' : 'NULL');
+          logger.log('  - sector-monitor-data:', sectorMonitorDataStr ? 'EXISTS' : 'NULL');
           
           if (currentSectorStr) {
             const currentSectorData = JSON.parse(currentSectorStr);
             const monitorData = sectorMonitorDataStr ? JSON.parse(sectorMonitorDataStr) : null;
             
-            console.log('  - currentSectorData:', currentSectorData);
-            console.log('  - monitorData:', monitorData);
+            logger.log('  - currentSectorData:', currentSectorData);
+            logger.log('  - monitorData:', monitorData);
             
             const state = get();
             // Try to find sector from state first (may be loaded from backend), fallback to initialSectors
             const sector = state.sectors.find(s => s.id === currentSectorData.id) || initialSectors.find(s => s.id === currentSectorData.id);
             
             if (sector) {
-              console.log('✅ Syncing with background task - sector found:', sector.name);
+              logger.log('✅ Syncing with background task - sector found:', sector.name);
               
               if (!state.currentSector || state.currentSector.id !== sector.id) {
-                console.log('🆕 Setting current sector from background task:', sector.name);
+                logger.log('🆕 Setting current sector from background task:', sector.name);
                 
                 const sectorWithRoute = state.sectors.find(s => s.id === sector.id) || sector;
                 
@@ -882,6 +872,7 @@ export const useSectorStore = create(
                   willExceedLimit: (monitorData?.averageSpeed || 0) > sector.speedLimit,
                   sectorTotalDistance: totalDistance,
                   distanceTraveled: 0,
+                  entryDistanceFromStart: null,
                   recommendedSpeed: monitorData?.recommendedSpeed || null,
                   sectorProgress: 0,
                   lastNotificationThreshold: 0,
@@ -890,9 +881,9 @@ export const useSectorStore = create(
                   lastSpeedUpdateTime: Date.now()
                 });
                 
-                console.log('✅ Current sector set to:', sector.name);
+                logger.log('✅ Current sector set to:', sector.name);
               } else {
-                console.log('🔄 Updating sector data from background task');
+                logger.log('🔄 Updating sector data from background task');
                 if (monitorData) {
                   set({
                     currentSectorAverageSpeed: monitorData.averageSpeed || state.currentSectorAverageSpeed,
@@ -904,12 +895,12 @@ export const useSectorStore = create(
                 }
               }
             } else {
-              console.log('⚠️ Sector not found in initialSectors:', currentSectorData.id);
+              logger.log('⚠️ Sector not found in initialSectors:', currentSectorData.id);
             }
           } else {
             const state = get();
             if (state.currentSector) {
-              console.log('❌ Background task has no sector, clearing current sector');
+              logger.log('❌ Background task has no sector, clearing current sector');
               set({
                 currentSector: null,
                 sectorEntryTime: null,
@@ -921,6 +912,7 @@ export const useSectorStore = create(
                 lastNotificationThreshold: 0,
                 sectorTotalDistance: 0,
                 distanceTraveled: 0,
+                entryDistanceFromStart: null,
                 recommendedSpeed: null,
                 sectorConfirmationCount: 0,
                 exitConfirmationCount: 0,
@@ -929,7 +921,7 @@ export const useSectorStore = create(
             }
           }
         } catch (error) {
-          console.error('❌ Error syncing with background task:', error);
+          logger.error('❌ Error syncing with background task:', error);
         }
       },
     } as SectorActions)

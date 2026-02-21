@@ -15,6 +15,7 @@ import {
   MAX_SPEED_READINGS,
 } from '@/constants/proximity';
 import { computeRecommendedSpeedKmH } from '@/utils/speed-calculations';
+import { logger } from '@/utils/logger';
 
 const LOCATION_TASK_NAME = 'background-location-task';
 
@@ -274,7 +275,7 @@ async function loadStateFromStorage(): Promise<void> {
       memTrackingState.lastSectorEvent = { sectorId: null, eventType: null, timestamp: 0 };
     }
   } catch (error) {
-    console.error('Failed to load state from storage:', error);
+    logger.error('Failed to load state from storage:', error);
     // Fallback към празно състояние
     memTrackingState = {
       lastCheckTime: 0,
@@ -305,14 +306,14 @@ async function flushStateToStorage(force: boolean = false): Promise<void> {
       ['sector-speed-readings', JSON.stringify(memSpeedReadings)],
     ]);
   } catch (error) {
-    console.error('Failed to flush state to storage:', error);
+    logger.error('Failed to flush state to storage:', error);
   }
 }
 
 // Background task definition
 TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
   if (error) {
-    console.error('Background location task error:', error);
+    logger.error('Background location task error:', error);
     return;
   }
 
@@ -376,12 +377,12 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         
         // Зареждаме маршрутите на секторите от AsyncStorage ПРЕДИ early-warning проверката
         const sectorsWithRoutesStr = await AsyncStorage.getItem('sectors-with-routes');
-        let sectorsWithRoutes: any[] = sectors;
+        let sectorsWithRoutes: (typeof sectors[number] & { routeCoordinates?: [number, number][] })[] = sectors;
         if (sectorsWithRoutesStr) {
           try {
             sectorsWithRoutes = JSON.parse(sectorsWithRoutesStr);
           } catch {
-            if (__DEV__) console.log('Failed to parse sectors with routes, using default');
+            if (__DEV__) logger.log('Failed to parse sectors with routes, using default');
           }
         }
         
@@ -453,7 +454,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                   trigger: null,
                 });
                 
-                if (__DEV__) console.log(`Warning: Approaching sector ${sector.name} on correct route at ${distanceText}`);
+                if (__DEV__) logger.log(`Warning: Approaching sector ${sector.name} on correct route at ${distanceText}`);
               }
             }
             
@@ -468,7 +469,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         }
         
         // Проверяваме дали влизаме в нов сектор
-        const newSector = sectorsWithRoutes.find((sector: any) => {
+        const newSector = sectorsWithRoutes.find((sector) => {
           if (!sector.active) return false;
           
           const sectorCheck: SectorCheck = {
@@ -484,13 +485,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           
           const isNear = isPointNearSector(location.coords, sectorCheck, PROXIMITY_THRESHOLD_ENTER);
           if (isNear && __DEV__) {
-            console.log(`✅ Found sector nearby: ${sector.name} (ID: ${sector.id})`);
+            logger.log(`✅ Found sector nearby: ${sector.name} (ID: ${sector.id})`);
           }
           return isNear;
         });
         
         if (newSector && __DEV__) {
-          console.log(`🎯 New sector detected: ${newSector.name} (ID: ${newSector.id})`);
+          logger.log(`🎯 New sector detected: ${newSector.name} (ID: ${newSector.id})`);
         }
 
         // Ако вече сме в сектор
@@ -498,7 +499,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           // Проверяваме дали все още сме в същия сектор
           // Използваме по-голям threshold за изход за да избегнем фликер
           const stillInSector = newSector && newSector.id === trackingState.currentSectorId;
-          const exitCheck = sectorsWithRoutes.find((sector: any) => {
+          const exitCheck = sectorsWithRoutes.find((sector) => {
             if (!sector.active || sector.id !== trackingState.currentSectorId) return false;
             const sectorCheck: SectorCheck = {
               id: sector.id,
@@ -523,7 +524,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             // Anti-loop защита: ако имаме твърде много exit confirmations, ресетваме hard
             // Това предотвратява "излизане/влизане/излизане" цикъл при нестабилен GPS
             if (trackingState.exitConfirmations > 5) {
-              if (__DEV__) console.log('Anti-loop: Resetting exit confirmations due to GPS jitter');
+              if (__DEV__) logger.log('Anti-loop: Resetting exit confirmations due to GPS jitter');
               trackingState.exitConfirmations = 0;
               shouldSaveTrackingState = true;
               return; // Пропускаме тази итерация
@@ -550,7 +551,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     }
                   } catch (e) {
-                    if (__DEV__) console.log('Haptics not available:', e);
+                    if (__DEV__) logger.log('Haptics not available:', e);
                   }
                 }
                 
@@ -561,7 +562,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                 // Финална защита: пропускаме ако вече има активен exit event
                 const lastEvent = trackingState.lastSectorEvent;
                 if (lastEvent.eventType === 'exit' && lastEvent.sectorId === exitingSector.id) {
-                  if (__DEV__) console.log(`Skipping duplicate exit notification for sector ${exitingSector.id}`);
+                  if (__DEV__) logger.log(`Skipping duplicate exit notification for sector ${exitingSector.id}`);
                   return; // Пропускаме ако вече има exit event активен
                 }
                 
@@ -609,7 +610,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                   shouldSaveTrackingState = true;
                 }
 
-                if (__DEV__) console.log(`Exited sector ${exitingSector.name} with avg speed ${avgSpeed.toFixed(1)} km/h`);
+                if (__DEV__) logger.log(`Exited sector ${exitingSector.name} with avg speed ${avgSpeed.toFixed(1)} km/h`);
               }
               
               // Изчистваме данните
@@ -680,10 +681,10 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
                     timestamp: new Date().toISOString(),
                   });
                   
-                  if (__DEV__) console.log('Violation saved to database successfully');
+                  if (__DEV__) logger.log('Violation saved to database successfully');
                 }
               } catch (dbError) {
-                console.error('Failed to save violation to database:', dbError);
+                logger.error('Failed to save violation to database:', dbError);
                 // Don't throw error to avoid breaking the flow
               }
               
@@ -729,7 +730,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               try {
                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
               } catch (e) {
-                if (__DEV__) console.log('Haptics not available:', e);
+                if (__DEV__) logger.log('Haptics not available:', e);
               }
             }
             
@@ -783,7 +784,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
               shouldSaveTrackingState = true;
             }
             
-            if (__DEV__) console.log(`Entered sector ${newSector.name} with speed ${speed.toFixed(1)} km/h`);
+            if (__DEV__) logger.log(`Entered sector ${newSector.name} with speed ${speed.toFixed(1)} km/h`);
           }
         }
 
@@ -903,9 +904,9 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           await flushStateToStorage(false); // Периодичен flush
         }
         
-        if (__DEV__) console.log(`🚀 MAX ACCURACY GPS: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}, Speed: ${speed.toFixed(1)} km/h, Accuracy: ${location.coords.accuracy?.toFixed(1)}m`);
+        if (__DEV__) logger.log(`🚀 MAX ACCURACY GPS: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}, Speed: ${speed.toFixed(1)} km/h, Accuracy: ${location.coords.accuracy?.toFixed(1)}m`);
       } catch (error) {
-        console.error('Error processing background location:', error);
+        logger.error('Error processing background location:', error);
       }
     }
   }
@@ -926,7 +927,7 @@ async function ensureAndroidChannel(): Promise<void> {
       lightColor: '#FF231F7C',
     });
   } catch (error) {
-    console.error('Failed to create notification channel:', error);
+    logger.error('Failed to create notification channel:', error);
   }
 }
 
@@ -975,14 +976,14 @@ export class BackgroundLocationService {
         await AsyncStorage.setItem(tipKey, '1');
       }
     } catch (error) {
-      console.error('Failed to show battery optimization info:', error);
+      logger.error('Failed to show battery optimization info:', error);
     }
   }
 
   static async startBackgroundLocationTracking(): Promise<boolean> {
     try {
       if (Platform.OS === 'web') {
-        if (__DEV__) console.log('Background location not supported on web');
+        if (__DEV__) logger.log('Background location not supported on web');
         return false;
       }
 
@@ -993,12 +994,12 @@ export class BackgroundLocationService {
       await this.checkBatteryOptimization();
 
       // ВИНАГИ изискваме максимални разрешения
-      if (__DEV__) console.log('🔐 Requesting ALWAYS location permissions for maximum GPS accuracy...');
+      if (__DEV__) logger.log('🔐 Requesting ALWAYS location permissions for maximum GPS accuracy...');
       
       // Първо искаме foreground разрешение
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       if (foregroundStatus !== 'granted') {
-        if (__DEV__) console.log('❌ Foreground location permission not granted');
+        if (__DEV__) logger.log('❌ Foreground location permission not granted');
         
         // Показваме критично известие
         await Notifications.scheduleNotificationAsync({
@@ -1022,7 +1023,7 @@ export class BackgroundLocationService {
       // След това ЗАДЪЛЖИТЕЛНО искаме background разрешение (винаги)
       const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
       if (backgroundStatus !== 'granted') {
-        if (__DEV__) console.log('❌ Background location permission not granted - CRITICAL ERROR');
+        if (__DEV__) logger.log('❌ Background location permission not granted - CRITICAL ERROR');
         
         // Показваме критично известие с детайлни инструкции
         await Notifications.scheduleNotificationAsync({
@@ -1043,12 +1044,12 @@ export class BackgroundLocationService {
         return false;
       }
       
-      if (__DEV__) console.log('✅ All location permissions granted - proceeding with maximum accuracy GPS tracking');
+      if (__DEV__) logger.log('✅ All location permissions granted - proceeding with maximum accuracy GPS tracking');
 
       // Проверяваме дали вече работи
       const isTaskRunning = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
       if (isTaskRunning) {
-        if (__DEV__) console.log('Background location task already running');
+        if (__DEV__) logger.log('Background location task already running');
         this.isRunning = true;
         return true;
       }
@@ -1070,13 +1071,14 @@ export class BackgroundLocationService {
           },
         });
         
-        if (__DEV__) console.log('🚀 Background location tracking started with MAXIMUM GPS accuracy settings');
-      } catch (locationError: any) {
-        console.error('Location service error:', locationError);
+        if (__DEV__) logger.log('🚀 Background location tracking started with MAXIMUM GPS accuracy settings');
+      } catch (locationError: unknown) {
+        logger.error('Location service error:', locationError);
         
         // Проверяваме за специфични грешки
-        if (locationError.message && locationError.message.includes('Background location has not been configured')) {
-          console.error('❌ Background location not configured in app.json. Please rebuild the app with proper configuration.');
+        const errorMessage = locationError instanceof Error ? locationError.message : String(locationError);
+        if (errorMessage.includes('Background location has not been configured')) {
+          logger.error('❌ Background location not configured in app.json. Please rebuild the app with proper configuration.');
           
           // Показваме известие за грешката
           await Notifications.scheduleNotificationAsync({
@@ -1101,7 +1103,7 @@ export class BackgroundLocationService {
       }
 
       this.isRunning = true;
-      if (__DEV__) console.log('✅ Background location tracking started with MAXIMUM accuracy');
+      if (__DEV__) logger.log('✅ Background location tracking started with MAXIMUM accuracy');
       
       // Показваме persistent notification за максимална точност
       await this.showBackgroundNotification();
@@ -1124,7 +1126,7 @@ export class BackgroundLocationService {
       
       return true;
     } catch (error) {
-      console.error('Failed to start background location tracking:', error);
+      logger.error('Failed to start background location tracking:', error);
       return false;
     }
   }
@@ -1138,7 +1140,7 @@ export class BackgroundLocationService {
       const isTaskRunning = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
       if (isTaskRunning) {
         await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
-        if (__DEV__) console.log('Background location tracking stopped');
+        if (__DEV__) logger.log('Background location tracking stopped');
       }
 
       this.isRunning = false;
@@ -1149,7 +1151,7 @@ export class BackgroundLocationService {
         this.bgInfoNotifId = null;
       }
     } catch (error) {
-      console.error('Failed to stop background location tracking:', error);
+      logger.error('Failed to stop background location tracking:', error);
     }
   }
 
@@ -1163,7 +1165,7 @@ export class BackgroundLocationService {
       this.isRunning = isTaskRunning;
       return isTaskRunning;
     } catch (error) {
-      console.error('Failed to check background location status:', error);
+      logger.error('Failed to check background location status:', error);
       return false;
     }
   }
@@ -1187,7 +1189,7 @@ export class BackgroundLocationService {
         trigger: null,
       });
     } catch (error) {
-      console.error('Failed to show background notification:', error);
+      logger.error('Failed to show background notification:', error);
     }
   }
 

@@ -11,7 +11,7 @@ interface UnifiedSectorDisplayProps {
 }
 
 export const UnifiedSectorDisplay: React.FC<UnifiedSectorDisplayProps> = ({ sector }) => {
-  const { currentSpeed, lastNonZeroSpeed } = useSpeedStore();
+  const { currentSpeed } = useSpeedStore();
   const { 
     sectorEntryTime,
     currentSectorAverageSpeed,

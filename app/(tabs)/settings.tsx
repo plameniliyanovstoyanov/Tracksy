@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bell, Vibrate, MapPin, Smartphone, Info, Navigation, AlertTriangle, Wifi, Battery, Download, User, LogOut } from 'lucide-react-native';
+import { Bell, Vibrate, MapPin, Smartphone, Info, Navigation, AlertTriangle, Wifi, Battery, Download, User, LogOut, Shield, Ban } from 'lucide-react-native';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useOfflineStore } from '@/stores/offline-store';
 import { useBatteryOptimization } from '@/stores/battery-optimization';
@@ -20,6 +20,7 @@ import { Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSubscriptionStore } from '@/stores/subscription-store';
 import { shouldShowPaywall, markPaywallShown } from '@/hooks/usePaywallTrigger';
+import { logger } from '@/utils/logger';
 
 export default function SettingsScreen() {
   const offlineStore = useOfflineStore();
@@ -38,12 +39,12 @@ export default function SettingsScreen() {
     // Load settings from database if user is authenticated
     if (isAuthenticated && user?.id) {
       loadFromStorage(user.id).catch(err => {
-        console.error('Failed to load settings:', err);
+        logger.error('Failed to load settings:', err);
       });
     } else {
       // Load from local storage for anonymous users
       loadFromStorage().catch(err => {
-        console.error('Failed to load settings:', err);
+        logger.error('Failed to load settings:', err);
       });
     }
   }, [isAuthenticated, user?.id]);
@@ -77,35 +78,35 @@ export default function SettingsScreen() {
   const handleToggleNotifications = () => {
     toggleNotifications();
     if (isAuthenticated && user?.id) {
-      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+      saveToStorage(user.id).catch(err => logger.error('Failed to save settings:', err));
     }
   };
   
   const handleToggleVibration = () => {
     toggleVibration();
     if (isAuthenticated && user?.id) {
-      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+      saveToStorage(user.id).catch(err => logger.error('Failed to save settings:', err));
     }
   };
   
   const handleToggleSound = () => {
     toggleSound();
     if (isAuthenticated && user?.id) {
-      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+      saveToStorage(user.id).catch(err => logger.error('Failed to save settings:', err));
     }
   };
   
   const handleToggleEarlyWarning = () => {
     toggleEarlyWarning();
     if (isAuthenticated && user?.id) {
-      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+      saveToStorage(user.id).catch(err => logger.error('Failed to save settings:', err));
     }
   };
   
   const handleToggleBackgroundTracking = async () => {
     await toggleBackgroundTracking();
     if (isAuthenticated && user?.id) {
-      saveToStorage(user.id).catch(err => console.error('Failed to save settings:', err));
+      saveToStorage(user.id).catch(err => logger.error('Failed to save settings:', err));
     }
   };
   const insets = useSafeAreaInsets();
@@ -213,28 +214,28 @@ export default function SettingsScreen() {
                     activeOpacity={0.6}
                     onPress={async () => {
                       if (loading) {
-                        console.log('⚠️ Logout already in progress, ignoring press');
+                        logger.log('⚠️ Logout already in progress, ignoring press');
                         return;
                       }
                       
                       try {
-                        console.log('🚪 Logout button pressed');
+                        logger.log('🚪 Logout button pressed');
                         
                         // Start sign out (don't wait for it to complete)
                         const signOutPromise = signOut();
                         
                         // Navigate immediately - signOut will clear state in background
                         // The auto-redirect in _layout.tsx will also handle this
-                        console.log('🔍 Navigating to /login immediately...');
+                        logger.log('🔍 Navigating to /login immediately...');
                         router.replace('/login');
-                        console.log('✅ Navigation command sent');
+                        logger.log('✅ Navigation command sent');
                         
                         // Wait for signOut to complete in background (non-blocking)
                         signOutPromise.catch((error) => {
-                          console.warn('⚠️ Sign out error (non-blocking):', error);
+                          logger.warn('⚠️ Sign out error (non-blocking):', error);
                         });
                       } catch (error) {
-                        console.error('❌ Error during logout:', error);
+                        logger.error('❌ Error during logout:', error);
                         // Even if error occurs, try to redirect to login
                         router.replace('/login');
                       }
@@ -259,6 +260,48 @@ export default function SettingsScreen() {
                 >
                   <User color="#000" size={24} />
                   <Text style={styles.loginText}>Влезте в профила си</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Premium / Абонамент секция */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Абонамент</Text>
+            
+            {isPremium ? (
+              <View style={styles.premiumActiveCard}>
+                <LinearGradient
+                  colors={['#00ff88', '#00cc66']}
+                  style={styles.premiumActiveGradient}
+                >
+                  <Shield color="#000" size={24} />
+                  <View style={styles.premiumActiveText}>
+                    <Text style={styles.premiumActiveTitle}>Premium активен</Text>
+                    <Text style={styles.premiumActiveSubtitle}>Без реклами, пълна функционалност</Text>
+                  </View>
+                </LinearGradient>
+              </View>
+            ) : (
+              <TouchableOpacity 
+                style={styles.upgradePremiumCard}
+                onPress={() => router.push('/paywall')}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={['#2a2a2a', '#1a1a1a']}
+                  style={styles.upgradePremiumGradient}
+                >
+                  <View style={styles.upgradePremiumLeft}>
+                    <Ban color="#ffb347" size={24} />
+                    <View style={styles.upgradePremiumText}>
+                      <Text style={styles.upgradePremiumTitle}>Безплатна версия</Text>
+                      <Text style={styles.upgradePremiumSubtitle}>С реклами от време на време</Text>
+                    </View>
+                  </View>
+                  <View style={styles.upgradePremiumButton}>
+                    <Text style={styles.upgradePremiumButtonText}>Премахни рекламите</Text>
+                  </View>
                 </LinearGradient>
               </TouchableOpacity>
             )}
@@ -684,6 +727,75 @@ const styles = StyleSheet.create({
   loginText: {
     color: '#000',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  // Premium секция
+  premiumActiveCard: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  premiumActiveGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  premiumActiveText: {
+    flex: 1,
+  },
+  premiumActiveTitle: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  premiumActiveSubtitle: {
+    color: '#003300',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  upgradePremiumCard: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ffb347',
+  },
+  upgradePremiumGradient: {
+    padding: 16,
+    gap: 12,
+  },
+  upgradePremiumLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  upgradePremiumText: {
+    flex: 1,
+  },
+  upgradePremiumTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  upgradePremiumSubtitle: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  upgradePremiumButton: {
+    backgroundColor: '#00ff88',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  upgradePremiumButtonText: {
+    color: '#000',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

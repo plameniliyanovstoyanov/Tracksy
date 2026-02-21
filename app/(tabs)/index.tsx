@@ -13,11 +13,14 @@ import { useSpeedStore } from '@/stores/speed-store';
 import { useSectorStore } from '@/stores/sector-store';
 import { useSubscriptionStore } from '@/stores/subscription-store';
 import { showAppStartAd, showPostSectorAd } from '@/lib/ads';
+import { shouldShowPaywall, markPaywallShown } from '@/hooks/usePaywallTrigger';
+import { logger } from '@/utils/logger';
 import { UnifiedSectorDisplay } from '@/components/UnifiedSectorDisplay';
 import { MapViewComponent } from '@/components/MapView';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { useDevice } from '@/stores/device-store';
 import { useAuth } from '@/stores/auth-store';
+import { useRouter } from 'expo-router';
 
 export default function HomeScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -45,6 +48,7 @@ export default function HomeScreen() {
 
   const { isPremium } = useSubscriptionStore();
   const previousSectorRef = useRef<typeof currentSector | null>(currentSector);
+  const router = useRouter();
   
   const { deviceId } = useDevice();
 
@@ -74,25 +78,25 @@ export default function HomeScreen() {
   useEffect(() => {
     // Load routes on mount and reload periodically to ensure they're loaded
     loadSectorRoutes().catch(err => {
-      console.error('Failed to load sector routes:', err);
+      logger.error('Failed to load sector routes:', err);
       // Retry after 5 seconds if failed
       setTimeout(() => {
-        loadSectorRoutes().catch(console.error);
+        loadSectorRoutes().catch(logger.error);
       }, 5000);
     });
   }, [loadSectorRoutes]);
 
   useEffect(() => {
-    let subscription: Location.LocationSubscription | null = null;
+    let subscription: { remove: () => void } | null = null;
     
     const initializeLocation = async () => {
       try {
-        console.log('🚀 Initializing location services...');
+        logger.log('🚀 Initializing location services...');
         setGpsStatus('Инициализиране на известия...');
         
         // Check platform compatibility
         if (Platform.OS === 'web') {
-          console.log('🌐 Running on web - using browser geolocation');
+          logger.log('🌐 Running on web - using browser geolocation');
           setGpsStatus('Исползване на браузър GPS...');
           
           // For web, use browser geolocation API
@@ -104,7 +108,7 @@ export default function HomeScreen() {
           // Request web geolocation
           navigator.geolocation.getCurrentPosition(
             (position) => {
-              console.log('✅ Web geolocation success:', position.coords.latitude, position.coords.longitude);
+              logger.log('✅ Web geolocation success:', position.coords.latitude, position.coords.longitude);
               setGpsStatus(`GPS: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`);
               
               // Convert to Expo Location format
@@ -143,7 +147,7 @@ export default function HomeScreen() {
                   handleLocationUpdate(locationObject);
                 },
                 (error) => {
-                  console.error('❌ Web geolocation error:', error);
+                  logger.error('❌ Web geolocation error:', error);
                   setGpsStatus('GPS грешка');
                 },
                 {
@@ -154,10 +158,10 @@ export default function HomeScreen() {
               );
               
               // Store watch ID for cleanup
-              (subscription as any) = { remove: () => navigator.geolocation.clearWatch(watchId) };
+              subscription = { remove: () => navigator.geolocation.clearWatch(watchId) };
             },
             (error) => {
-              console.error('❌ Web geolocation error:', error);
+              logger.error('❌ Web geolocation error:', error);
               setGpsStatus('GPS грешка');
               setErrorMsg(`GPS грешка: ${error.message}`);
             },
@@ -175,38 +179,38 @@ export default function HomeScreen() {
         await initializeNotifications();
         
         // Request foreground permissions
-        console.log('📍 Requesting foreground location permissions...');
+        logger.log('📍 Requesting foreground location permissions...');
         setGpsStatus('Заявяване на разрешения...');
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
-          console.error('❌ Foreground location permission denied');
+          logger.error('❌ Foreground location permission denied');
           setErrorMsg('Разрешението за достъп до местоположението е отказано');
           return;
         }
-        console.log('✅ Foreground location permission granted');
+        logger.log('✅ Foreground location permission granted');
 
         // Check if location services are enabled
         setGpsStatus('Проверка на GPS услуги...');
         const isEnabled = await Location.hasServicesEnabledAsync();
         if (!isEnabled) {
-          console.error('❌ Location services are disabled');
+          logger.error('❌ Location services are disabled');
           setErrorMsg('GPS услугите са изключени. Моля, включете ги от настройките.');
           return;
         }
-        console.log('✅ Location services are enabled');
+        logger.log('✅ Location services are enabled');
 
         // Get current location first to test GPS
-        console.log('🎯 Getting current location...');
+        logger.log('🎯 Getting current location...');
         setGpsStatus('Получаване на GPS позиция...');
         try {
           const currentLocation = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.BestForNavigation,
           });
-          console.log('✅ Got current location:', currentLocation.coords.latitude, currentLocation.coords.longitude);
+          logger.log('✅ Got current location:', currentLocation.coords.latitude, currentLocation.coords.longitude);
           setGpsStatus('GPS активен');
           handleLocationUpdate(currentLocation);
         } catch (locationError) {
-          console.error('❌ Failed to get current location:', locationError);
+          logger.error('❌ Failed to get current location:', locationError);
           setGpsStatus('GPS грешка');
           setErrorMsg('Не може да се получи GPS сигнал. Моля, проверете дали сте на открито.');
           return;
@@ -214,7 +218,7 @@ export default function HomeScreen() {
 
         startTracking();
         
-        console.log('👀 Starting location watching...');
+        logger.log('👀 Starting location watching...');
         setGpsStatus('Стартиране на проследяване...');
         subscription = await Location.watchPositionAsync(
           {
@@ -224,15 +228,15 @@ export default function HomeScreen() {
             mayShowUserSettingsDialog: true,
           },
           (location) => {
-            console.log('📍 Location update:', location.coords.latitude, location.coords.longitude, 'Speed:', location.coords.speed);
+            logger.log('📍 Location update:', location.coords.latitude, location.coords.longitude, 'Speed:', location.coords.speed);
             setGpsStatus(`GPS: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}`);
             handleLocationUpdate(location);
           }
         );
-        console.log('✅ Location watching started successfully');
+        logger.log('✅ Location watching started successfully');
         
       } catch (error) {
-        console.error('💥 Error initializing location:', error);
+        logger.error('💥 Error initializing location:', error);
         setGpsStatus('GPS грешка');
         setErrorMsg('Грешка при инициализиране на GPS. Моля, рестартирайте приложението.');
       }
@@ -242,19 +246,34 @@ export default function HomeScreen() {
 
     return () => {
       if (subscription) {
-        console.log('🛑 Stopping location subscription');
+        logger.log('🛑 Stopping location subscription');
         subscription.remove();
       }
       stopTracking();
     };
   }, [startTracking, stopTracking, handleLocationUpdate, initializeNotifications]);
 
+  // Показване на paywall за non-premium потребители (ненатрапчиво, след 2+ стартирания)
+  useEffect(() => {
+    (async () => {
+      try {
+        const show = await shouldShowPaywall(isPremium);
+        if (show) {
+          await markPaywallShown();
+          router.push('/paywall');
+        }
+      } catch {
+        // Non-blocking
+      }
+    })();
+  }, [isPremium, router]);
+
   // Показване на реклама при стартиране на приложението (само веднъж, само за non-premium)
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
     showAppStartAd(isPremium).catch((error) => {
-      console.warn('Failed to show app start ad (non-blocking):', error);
+      logger.warn('Failed to show app start ad (non-blocking):', error);
     });
   }, [isPremium]);
 
@@ -265,7 +284,7 @@ export default function HomeScreen() {
     if (previousSector && !currentSector) {
       if (Platform.OS !== 'web') {
         showPostSectorAd(isPremium).catch((error) => {
-          console.warn('Failed to show post-sector ad (non-blocking):', error);
+          logger.warn('Failed to show post-sector ad (non-blocking):', error);
         });
       }
     }

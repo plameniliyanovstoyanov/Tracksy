@@ -6,13 +6,14 @@ import { supabase, getDeepLink } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import { logger } from '@/utils/logger';
 
 // Helper to add timeout to promises
 const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> => {
   return Promise.race([
     promise,
     new Promise<T>((resolve) => setTimeout(() => {
-      console.warn(`Operation timed out after ${timeoutMs}ms, using fallback`);
+      logger.warn(`Operation timed out after ${timeoutMs}ms, using fallback`);
       resolve(fallbackValue);
     }, timeoutMs))
   ]);
@@ -46,12 +47,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       try {
         await AsyncStorage.setItem('device_id', uniqueId);
       } catch (e) {
-        console.warn('Could not store device ID:', e);
+        logger.warn('Could not store device ID:', e);
       }
       
       return uniqueId;
     } catch (error) {
-      console.error('Error generating device ID:', error);
+      logger.error('Error generating device ID:', error);
       // Fallback to timestamp + random
       return `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
@@ -60,7 +61,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   // Create anonymous user in database
   const createAnonymousUser = useCallback(async (deviceId: string) => {
     if (!deviceId?.trim()) {
-      console.error('Invalid device ID provided');
+      logger.error('Invalid device ID provided');
       return null;
     }
     
@@ -87,14 +88,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       if (error) {
         // If table doesn't exist or other database error, just log it but don't fail
-        console.warn('Could not create anonymous user record (this is OK if table does not exist):', error.message);
+        logger.warn('Could not create anonymous user record (this is OK if table does not exist):', error.message);
         return { device_id: deviceId }; // Return minimal data
       }
       
       return data;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.warn('Error in createAnonymousUser (continuing without database record):', errorMessage);
+      logger.warn('Error in createAnonymousUser (continuing without database record):', errorMessage);
       return { device_id: deviceId }; // Return minimal data
     }
   }, []);
@@ -123,12 +124,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           
           // Create anonymous user record in database (don't wait for it)
           createAnonymousUser(generatedDeviceId).catch(error => {
-            console.error('Error creating anonymous user:', error instanceof Error ? error.message : String(error));
+            logger.error('Error creating anonymous user:', error instanceof Error ? error.message : String(error));
           });
           setIsAnonymous(true);
         }
       } catch (error) {
-        console.error('Error initializing auth:', error);
+        logger.error('Error initializing auth:', error);
         // Fallback to anonymous mode
         const generatedDeviceId = await generateDeviceId();
         setDeviceId(generatedDeviceId);
@@ -145,7 +146,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (session) {
         // Set session and user IMMEDIATELY (don't wait for profile/settings creation)
         // This ensures navigation happens right away
-        console.log('✅ Auth state changed: User authenticated');
+        logger.log('✅ Auth state changed: User authenticated');
         setSession(session);
         setUser(session.user);
         setIsAnonymous(false);
@@ -166,7 +167,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
               
               if (checkError && checkError.code === 'PGRST116') {
                 // Profile doesn't exist, create it manually
-                console.log('Creating user profile manually...');
+                logger.log('Creating user profile manually...');
                 const { error: insertError } = await supabase
                   .from('user_profiles')
                   .insert({
@@ -179,13 +180,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
                   });
                 
                 if (insertError) {
-                  console.error('Error creating user profile:', insertError);
+                  logger.error('Error creating user profile:', insertError);
                 } else {
-                  console.log('User profile created successfully');
+                  logger.log('User profile created successfully');
                 }
               }
             } catch (error) {
-              console.error('Error checking/creating user profile:', error);
+              logger.error('Error checking/creating user profile:', error);
             }
           })(),
           
@@ -200,7 +201,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
               
               if (settingsCheckError && settingsCheckError.code === 'PGRST116') {
                 // Settings don't exist, create them with default values
-                console.log('Creating user settings with default values...');
+                logger.log('Creating user settings with default values...');
                 const { error: settingsInsertError } = await supabase
                   .from('user_settings')
                   .insert({
@@ -213,17 +214,17 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
                   });
                 
                 if (settingsInsertError) {
-                  console.error('Error creating user settings:', settingsInsertError);
+                  logger.error('Error creating user settings:', settingsInsertError);
                 } else {
-                  console.log('User settings created successfully with default values');
+                  logger.log('User settings created successfully with default values');
                 }
               }
             } catch (error) {
-              console.error('Error checking/creating user settings:', error);
+              logger.error('Error checking/creating user settings:', error);
             }
           })(),
         ]).catch((error) => {
-          console.warn('⚠️ Error creating profile/settings (non-blocking):', error);
+          logger.warn('⚠️ Error creating profile/settings (non-blocking):', error);
         });
       } else {
         setSession(null);
@@ -234,7 +235,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         try {
           await createAnonymousUser(generatedDeviceId);
         } catch (error) {
-          console.error('Error creating anonymous user on auth change:', error instanceof Error ? error.message : String(error));
+          logger.error('Error creating anonymous user on auth change:', error instanceof Error ? error.message : String(error));
         }
         setIsAnonymous(true);
       }
@@ -248,7 +249,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setLoading(true);
 
       const deepLink = getDeepLink(); // tracksy://auth/callback
-      console.log('🔗 Google OAuth deep link:', deepLink);
+      logger.log('🔗 Google OAuth deep link:', deepLink);
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -259,11 +260,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       });
 
       if (error) {
-        console.error('❌ Google signInWithOAuth error:', error);
+        logger.error('❌ Google signInWithOAuth error:', error);
         throw error;
       }
 
-      console.log('✅ Google signInWithOAuth success, opening auth session...', data);
+      logger.log('✅ Google signInWithOAuth success, opening auth session...', data);
 
       if (Platform.OS !== 'web' && data?.url) {
         const result = await WebBrowser.openAuthSessionAsync(
@@ -272,7 +273,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           { showInRecents: true }
         );
 
-        console.log('📱 Google Auth session result:', result.type, result.url);
+        logger.log('📱 Google Auth session result:', result.type, result.url);
 
         if (result.type === 'success' && result.url) {
           // Вземаме всичко след # или ?, където Supabase връща токените
@@ -283,35 +284,37 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           const refresh_token = params.get('refresh_token');
 
           if (access_token && refresh_token) {
-            console.log('✅ Google tokens extracted, setting session...');
+            logger.log('✅ Google tokens extracted, setting session...');
             const { data: { session }, error } = await supabase.auth.setSession({
               access_token,
               refresh_token,
             });
 
             if (error) {
-              console.error('❌ Error setting Google session:', error);
+              logger.error('❌ Error setting Google session:', error);
               throw error;
             }
 
             // onAuthStateChange + login.tsx ще поемат навигацията
-            console.log('✅ Google session set successfully');
+            logger.log('✅ Google session set successfully');
           } else {
-            console.error('❌ Google callback URL has no tokens:', fragment);
+            logger.error('❌ Google callback URL has no tokens:', fragment);
           }
         } else if (result.type === 'cancel') {
-          console.log('⚠️ Google OAuth cancelled by user');
+          logger.log('⚠️ Google OAuth cancelled by user');
         } else if (result.type === 'dismiss') {
-          console.log('⚠️ Google OAuth dismissed');
+          logger.log('⚠️ Google OAuth dismissed');
         } else {
-          console.error('❌ Google Auth session failed:', result.type);
+          logger.error('❌ Google Auth session failed:', result.type);
         }
       }
-    } catch (error: any) {
-      console.error('Authentication error (Google):', error.message);
-      console.error('Error stack:', error.stack);
-      if (error.message?.includes('not supported')) {
-        console.error('OAuth provider not configured in Supabase');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      logger.error('Authentication error (Google):', msg);
+      if (stack) logger.error('Error stack:', stack);
+      if (msg.includes('not supported')) {
+        logger.error('OAuth provider not configured in Supabase');
       }
     } finally {
       setLoading(false);
@@ -323,7 +326,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setLoading(true);
 
       const deepLink = getDeepLink(); // tracksy://auth/callback
-      console.log('🔗 Apple OAuth deep link:', deepLink);
+      logger.log('🔗 Apple OAuth deep link:', deepLink);
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'apple',
@@ -335,11 +338,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       });
 
       if (error) {
-        console.error('❌ Apple signInWithOAuth error:', error);
+        logger.error('❌ Apple signInWithOAuth error:', error);
         throw error;
       }
 
-      console.log('✅ Apple signInWithOAuth success, opening auth session...', data);
+      logger.log('✅ Apple signInWithOAuth success, opening auth session...', data);
 
       if (Platform.OS !== 'web' && data?.url) {
         const result = await WebBrowser.openAuthSessionAsync(
@@ -348,7 +351,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           { showInRecents: true }
         );
 
-        console.log('📱 Apple Auth session result:', result.type, result.url);
+        logger.log('📱 Apple Auth session result:', result.type, result.url);
 
         if (result.type === 'success' && result.url) {
           const fragment = result.url.split('#')[1] || result.url.split('?')[1] || '';
@@ -358,34 +361,36 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           const refresh_token = params.get('refresh_token');
 
           if (access_token && refresh_token) {
-            console.log('✅ Apple tokens extracted, setting session...');
+            logger.log('✅ Apple tokens extracted, setting session...');
             const { data: { session }, error } = await supabase.auth.setSession({
               access_token,
               refresh_token,
             });
 
             if (error) {
-              console.error('❌ Error setting Apple session:', error);
+              logger.error('❌ Error setting Apple session:', error);
               throw error;
             }
 
-            console.log('✅ Apple session set successfully');
+            logger.log('✅ Apple session set successfully');
           } else {
-            console.error('❌ Apple callback URL has no tokens:', fragment);
+            logger.error('❌ Apple callback URL has no tokens:', fragment);
           }
         } else if (result.type === 'cancel') {
-          console.log('⚠️ Apple OAuth cancelled by user');
+          logger.log('⚠️ Apple OAuth cancelled by user');
         } else if (result.type === 'dismiss') {
-          console.log('⚠️ Apple OAuth dismissed');
+          logger.log('⚠️ Apple OAuth dismissed');
         } else {
-          console.error('❌ Apple Auth session failed:', result.type);
+          logger.error('❌ Apple Auth session failed:', result.type);
         }
       }
-    } catch (error: any) {
-      console.error('Apple Authentication error:', error.message);
-      console.error('Error stack:', error.stack);
-      if (error.message?.includes('not supported')) {
-        console.error('OAuth provider not configured in Supabase');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      logger.error('Apple Authentication error:', msg);
+      if (stack) logger.error('Error stack:', stack);
+      if (msg.includes('not supported')) {
+        logger.error('OAuth provider not configured in Supabase');
       }
     } finally {
       setLoading(false);
@@ -433,11 +438,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           }
         }
       }
-    } catch (error: any) {
-      console.error('Authentication error:', error.message);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('Authentication error:', msg);
       // Show user-friendly error message
-      if (error.message.includes('not supported')) {
-        console.error('OAuth provider not configured in Supabase');
+      if (msg.includes('not supported')) {
+        logger.error('OAuth provider not configured in Supabase');
       }
     } finally {
       setLoading(false);
@@ -462,10 +468,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         aud: 'authenticated',
         created_at: new Date().toISOString(),
       },
-    } as any;
+    } as unknown as Session;
 
     setSession(adminSession);
-    setUser(adminSession.user);
+    setUser(adminSession.user as User);
     setIsAdmin(true);
     setLoading(false);
   }, []);
@@ -473,47 +479,49 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const signOut = useCallback(async () => {
     try {
       setLoading(true);
-      console.log('🚪 Starting sign out...');
+      logger.log('🚪 Starting sign out...');
       
       // If admin, just clear local state
       if (isAdmin) {
-        console.log('👤 Signing out admin user');
+        logger.log('👤 Signing out admin user');
         setSession(null);
         setUser(null);
         setIsAdmin(false);
         setLoading(false);
-        console.log('✅ Admin signed out successfully');
+        logger.log('✅ Admin signed out successfully');
         return;
       }
       
       // Clear local state FIRST (immediate feedback)
-      console.log('🧹 Clearing local session and user state...');
+      logger.log('🧹 Clearing local session and user state...');
       setSession(null);
       setUser(null);
       
       // Sign out from Supabase in background (don't wait for it)
-      console.log('🔐 Signing out from Supabase (background)...');
+      logger.log('🔐 Signing out from Supabase (background)...');
       supabase.auth.signOut().catch((error) => {
-        console.warn('⚠️ Supabase signOut error (non-blocking):', error);
+        logger.warn('⚠️ Supabase signOut error (non-blocking):', error);
       });
       
-      console.log('✅ Sign out successful');
-    } catch (error: any) {
-      console.error('❌ Sign out error:', error.message);
-      console.error('❌ Error stack:', error.stack);
+      logger.log('✅ Sign out successful');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      logger.error('❌ Sign out error:', msg);
+      if (stack) logger.error('❌ Error stack:', stack);
       
       // Even if error occurs, clear local state
-      console.log('⚠️ Sign out error occurred, but clearing local state anyway...');
+      logger.log('⚠️ Sign out error occurred, but clearing local state anyway...');
       setSession(null);
       setUser(null);
       
       // Show user-friendly error message
       if (error?.message?.includes('not supported')) {
-        console.error('OAuth provider not configured in Supabase');
+        logger.error('OAuth provider not configured in Supabase');
       }
     } finally {
       setLoading(false);
-      console.log('🏁 Sign out process completed');
+      logger.log('🏁 Sign out process completed');
     }
   }, [isAdmin]);
 
@@ -535,7 +543,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           .eq('device_id', deviceId);
       } catch (error) {
         // Silently fail if table doesn't exist
-        console.warn('Could not update last seen (table may not exist):', error);
+        logger.warn('Could not update last seen (table may not exist):', error);
       }
     }
   }, [isAnonymous, deviceId]);

@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,7 +17,9 @@ export default function PaywallScreen() {
   const router = useRouter();
   const { isPremium, subscriptionLoading, purchasePremium, restorePurchases } = useSubscriptionStore();
   const { isAuthenticated } = useAuth();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Ако isPremium стане true (реактивно), автоматично навигираме
   useEffect(() => {
     if (isPremium) {
       router.replace('/(tabs)');
@@ -33,16 +36,35 @@ export default function PaywallScreen() {
       return;
     }
 
-    await purchasePremium();
-    if (useSubscriptionStore.getState().isPremium) {
-      router.replace('/(tabs)');
+    setErrorMessage(null);
+    try {
+      await purchasePremium();
+      // isPremium ще се обнови реактивно чрез useEffect по-горе
+    } catch (error: unknown) {
+      const isUserCancelled = error instanceof Object && 'userCancelled' in error && (error as { userCancelled: boolean }).userCancelled;
+      const msg = isUserCancelled
+        ? null // Потребителят е натиснал Cancel – не показваме грешка
+        : 'Неуспешна покупка. Моля, опитайте отново.';
+      if (msg) {
+        setErrorMessage(msg);
+        Alert.alert('Грешка', msg);
+      }
     }
   };
 
   const handleRestore = async () => {
-    await restorePurchases();
-    if (useSubscriptionStore.getState().isPremium) {
-      router.replace('/(tabs)');
+    setErrorMessage(null);
+    try {
+      await restorePurchases();
+      // Ако няма premium entitlement, показваме съобщение
+      const { isPremium: restored } = useSubscriptionStore.getState();
+      if (!restored) {
+        Alert.alert('Информация', 'Не бяха намерени предишни покупки за този акаунт.');
+      }
+      // Ако е premium – useEffect ще навигира автоматично
+    } catch {
+      setErrorMessage('Неуспешно възстановяване на покупки.');
+      Alert.alert('Грешка', 'Неуспешно възстановяване на покупки. Моля, опитайте отново.');
     }
   };
 

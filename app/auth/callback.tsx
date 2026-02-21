@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/stores/auth-store';
+import { logger } from '@/utils/logger';
 
 function extractTokensFromUrl(url: string): { access_token?: string; refresh_token?: string } {
   try {
@@ -19,7 +20,7 @@ function extractTokensFromUrl(url: string): { access_token?: string; refresh_tok
     }
 
     if (!fragment) {
-      console.log('⚠️ No hash/query fragment in URL:', url);
+      logger.log('⚠️ No hash/query fragment in URL:', url);
       return {};
     }
 
@@ -27,14 +28,14 @@ function extractTokensFromUrl(url: string): { access_token?: string; refresh_tok
     const access_token = params.get('access_token') || undefined;
     const refresh_token = params.get('refresh_token') || undefined;
 
-    console.log('📋 Extracted tokens from URL fragment:', {
+    logger.log('📋 Extracted tokens from URL fragment:', {
       hasAccessToken: !!access_token,
       hasRefreshToken: !!refresh_token,
     });
 
     return { access_token, refresh_token };
   } catch (e) {
-    console.error('❌ Failed to extract tokens from URL:', e);
+    logger.error('❌ Failed to extract tokens from URL:', e);
     return {};
   }
 }
@@ -53,13 +54,13 @@ export default function AuthCallbackScreen() {
   useEffect(() => {
     const run = async () => {
       try {
-        console.log('🔗 auth/callback mounted');
+        logger.log('🔗 auth/callback mounted');
 
         const url = await Linking.getInitialURL();
-        console.log('🔗 callback URL:', url);
+        logger.log('🔗 callback URL:', url);
 
         if (!url) {
-          console.log('❌ No URL in callback, redirecting to /login');
+          logger.log('❌ No URL in callback, redirecting to /login');
           router.replace('/login');
           return;
         }
@@ -67,12 +68,12 @@ export default function AuthCallbackScreen() {
         const { access_token, refresh_token } = extractTokensFromUrl(url);
 
         if (!access_token || !refresh_token) {
-          console.log('❌ No tokens in URL, redirecting to /login');
+          logger.log('❌ No tokens in URL, redirecting to /login');
           router.replace('/login');
           return;
         }
 
-        console.log('✅ Tokens extracted, calling supabase.auth.setSession...');
+        logger.log('✅ Tokens extracted, calling supabase.auth.setSession...');
 
         const { data: { session }, error } = await supabase.auth.setSession({
           access_token,
@@ -80,15 +81,15 @@ export default function AuthCallbackScreen() {
         });
 
         if (error || !session) {
-          console.log('❌ Error setting session in supabase:', error);
+          logger.log('❌ Error setting session in supabase:', error);
           router.replace('/login');
           return;
         }
 
-        console.log('✅ Session set successfully in callback, navigating to tabs...');
+        logger.log('✅ Session set successfully in callback, navigating to tabs...');
         router.replace('/(tabs)');
       } catch (e) {
-        console.error('❌ auth/callback error:', e);
+        logger.error('❌ auth/callback error:', e);
         router.replace('/login');
       }
     };

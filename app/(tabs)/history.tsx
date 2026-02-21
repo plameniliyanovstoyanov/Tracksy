@@ -44,12 +44,13 @@ export default function HistoryScreen() {
             offset: 0,
           }),
           timeoutPromise,
-        ]) as any;
+        ]) as { violations: ViolationRecord[] };
         
         setDbHistory(result.violations || []);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Silently fail - use local history instead
-        console.warn('⚠️ Could not load history from database (using local history):', error?.message || error);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn('⚠️ Could not load history from database (using local history):', msg);
         setDbHistory([]);
       } finally {
         setLoading(false);

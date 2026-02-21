@@ -5,6 +5,7 @@ import { Platform, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { combine } from 'zustand/middleware';
+import { logger } from '@/utils/logger';
 
 interface BatteryState {
   batteryLevel: number;
@@ -52,7 +53,7 @@ export const useBatteryOptimization = create(
       initializeBatteryOptimization: async () => {
         try {
           if (Platform.OS === 'web') {
-            console.log('Battery optimization not available on web');
+            logger.log('Battery optimization not available on web');
             return;
           }
 
@@ -84,7 +85,7 @@ export const useBatteryOptimization = create(
               locationUpdateInterval: settings.interval,
               locationAccuracy: settings.accuracy,
             });
-            console.log(`Battery level: ${(batteryLevel * 100).toFixed(0)}%, using max GPS accuracy`);
+            logger.log(`Battery level: ${(batteryLevel * 100).toFixed(0)}%, using max GPS accuracy`);
           });
 
           const lowPowerSubscription = Battery.addLowPowerModeListener(({ lowPowerMode }) => {
@@ -101,9 +102,9 @@ export const useBatteryOptimization = create(
           // Запазваме subscriptions за по-късно почистване
           // В реална имплементация трябва да ги почистим при unmount
           
-          console.log(`Battery optimization initialized: ${(batteryLevel * 100).toFixed(0)}% battery`);
+          logger.log(`Battery optimization initialized: ${(batteryLevel * 100).toFixed(0)}% battery`);
         } catch (error) {
-          console.error('Failed to initialize battery optimization:', error);
+          logger.error('Failed to initialize battery optimization:', error);
         }
       },
 
@@ -117,7 +118,7 @@ export const useBatteryOptimization = create(
           locationAccuracy: settings.accuracy,
         });
         
-        console.log(`Battery level: ${(level * 100).toFixed(0)}%, using max GPS accuracy`);
+        logger.log(`Battery level: ${(level * 100).toFixed(0)}%, using max GPS accuracy`);
       },
 
       setAdaptiveMode: async (enabled: boolean) => {
@@ -133,9 +134,9 @@ export const useBatteryOptimization = create(
             locationAccuracy: settings.accuracy,
           });
           
-          console.log('Adaptive mode disabled - always using max accuracy');
+          logger.log('Adaptive mode disabled - always using max accuracy');
         } catch (error) {
-          console.error('Failed to set adaptive mode:', error);
+          logger.error('Failed to set adaptive mode:', error);
         }
       },
 
@@ -166,11 +167,11 @@ export const useBatteryOptimization = create(
             try {
               await Linking.openSettings();
             } catch (linkError) {
-              console.log('Could not open settings automatically');
+              logger.log('Could not open settings automatically');
             }
           }
         } catch (error) {
-          console.error('Failed to request battery optimization disable:', error);
+          logger.error('Failed to request battery optimization disable:', error);
         }
       },
 
@@ -191,14 +192,14 @@ export const useBatteryOptimization = create(
             trigger: null,
           });
         } catch (error) {
-          console.error('Failed to show battery optimization instructions:', error);
+          logger.error('Failed to show battery optimization instructions:', error);
         }
       },
 
       requestAlwaysLocationPermission: async () => {
         try {
           if (Platform.OS === 'web') {
-            console.log('Location permissions not applicable on web');
+            logger.log('Location permissions not applicable on web');
             return false;
           }
 
@@ -244,16 +245,16 @@ export const useBatteryOptimization = create(
             try {
               await Linking.openSettings();
             } catch (linkError) {
-              console.log('Could not open settings automatically');
+              logger.log('Could not open settings automatically');
             }
             
             return false;
           }
 
-          console.log('✅ All location permissions granted');
+          logger.log('✅ All location permissions granted');
           return true;
         } catch (error) {
-          console.error('Failed to request location permissions:', error);
+          logger.error('Failed to request location permissions:', error);
           return false;
         }
       },

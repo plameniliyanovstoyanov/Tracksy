@@ -1,6 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useCallback, useMemo } from 'react';
 import { trpcClient } from '@/lib/trpc';
+import { logger } from '@/utils/logger';
 
 export interface ViolationRecord {
   id: string;
@@ -71,7 +72,7 @@ export const [ViolationHistoryProvider, useViolationHistory] = createContextHook
         timestamp: new Date().toISOString(),
       });
 
-      console.log('Violation saved:', result);
+      logger.log('Violation saved:', result);
       
       // Add to local state for immediate UI update
       const newViolation: ViolationRecord = {
@@ -90,7 +91,7 @@ export const [ViolationHistoryProvider, useViolationHistory] = createContextHook
       
       return result;
     } catch (error) {
-      console.error('Error saving violation:', error);
+      logger.error('Error saving violation:', error);
       setError('Failed to save violation');
       throw error;
     }
@@ -124,7 +125,7 @@ export const [ViolationHistoryProvider, useViolationHistory] = createContextHook
       
       return result;
     } catch (error) {
-      console.error('Error loading violation history:', error);
+      logger.error('Error loading violation history:', error);
       setError('Failed to load violation history');
       throw error;
     } finally {
@@ -156,7 +157,7 @@ export const [ViolationHistoryProvider, useViolationHistory] = createContextHook
       
       return result;
     } catch (error) {
-      console.error('Error loading violation stats:', error);
+      logger.error('Error loading violation stats:', error);
       setError('Failed to load violation statistics');
       throw error;
     } finally {

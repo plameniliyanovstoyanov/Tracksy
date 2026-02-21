@@ -3,13 +3,23 @@ import NetInfo from '@react-native-community/netinfo';
 import { create } from 'zustand';
 import { combine } from 'zustand/middleware';
 import { Sector } from '@/data/sectors';
+import { logger } from '@/utils/logger';
 
 interface OfflineState {
   isOnline: boolean;
   cachedSectors: Sector[];
   cachedMapTiles: { [key: string]: string }; // Base64 encoded tiles
   lastSyncTime: number;
-  pendingNotifications: any[];
+  pendingNotifications: PendingNotification[];
+  _netInfoUnsubscribe: (() => void) | null;
+}
+
+interface PendingNotification {
+  id: string;
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+  timestamp: number;
 }
 
 interface OfflineActions {
@@ -19,7 +29,7 @@ interface OfflineActions {
   getCachedMapTile: (tileKey: string) => string | null;
   syncPendingData: () => Promise<void>;
   setOnlineStatus: (isOnline: boolean) => void;
-  addPendingNotification: (notification: any) => void;
+  addPendingNotification: (notification: PendingNotification) => void;
 }
 
 const CACHE_KEYS = {
@@ -36,7 +46,8 @@ export const useOfflineStore = create(
       cachedSectors: [] as Sector[],
       cachedMapTiles: {} as { [key: string]: string },
       lastSyncTime: 0,
-      pendingNotifications: [] as any[],
+      pendingNotifications: [] as PendingNotification[],
+      _netInfoUnsubscribe: null as (() => void) | null,
     } as OfflineState,
     (set, get) => ({
       initializeOfflineMode: async () => {
@@ -61,6 +72,10 @@ export const useOfflineStore = create(
             pendingNotifications,
           });
 
+          // Почистваме предишен listener ако има (при повторно извикване)
+          const prevUnsub = get()._netInfoUnsubscribe;
+          if (prevUnsub) prevUnsub();
+
           // Слушаме за промени в мрежовата свързаност
           const unsubscribe = NetInfo.addEventListener(state => {
             const isOnline = state.isConnected && state.isInternetReachable !== false;
@@ -71,14 +86,15 @@ export const useOfflineStore = create(
               get().syncPendingData();
             }
           });
+          set({ _netInfoUnsubscribe: unsubscribe });
 
           // Проверяваме текущия статус
           const netState = await NetInfo.fetch();
           set({ isOnline: netState.isConnected && netState.isInternetReachable !== false });
 
-          console.log('Offline mode initialized');
+          logger.log('Offline mode initialized');
         } catch (error) {
-          console.error('Failed to initialize offline mode:', error);
+          logger.error('Failed to initialize offline mode:', error);
         }
       },
 
@@ -92,9 +108,9 @@ export const useOfflineStore = create(
             lastSyncTime: Date.now()
           });
           
-          console.log(`Cached ${sectors.length} sectors for offline use`);
+          logger.log(`Cached ${sectors.length} sectors for offline use`);
         } catch (error) {
-          console.error('Failed to cache sectors:', error);
+          logger.error('Failed to cache sectors:', error);
         }
       },
 
@@ -114,7 +130,7 @@ export const useOfflineStore = create(
           await AsyncStorage.setItem(CACHE_KEYS.MAP_TILES, JSON.stringify(updatedTiles));
           set({ cachedMapTiles: updatedTiles });
         } catch (error) {
-          console.error('Failed to cache map tile:', error);
+          logger.error('Failed to cache map tile:', error);
         }
       },
 
@@ -131,7 +147,7 @@ export const useOfflineStore = create(
             return;
           }
 
-          console.log(`Syncing ${pendingNotifications.length} pending notifications`);
+          logger.log(`Syncing ${pendingNotifications.length} pending notifications`);
           
           // TODO: Изпращаме pending notifications към сървър
           // За сега просто ги изчистваме
@@ -139,7 +155,7 @@ export const useOfflineStore = create(
           await AsyncStorage.removeItem(CACHE_KEYS.PENDING_NOTIFICATIONS);
           set({ pendingNotifications: [] });
         } catch (error) {
-          console.error('Failed to sync pending data:', error);
+          logger.error('Failed to sync pending data:', error);
         }
       },
 
@@ -147,7 +163,7 @@ export const useOfflineStore = create(
         set({ isOnline });
       },
 
-      addPendingNotification: async (notification: any) => {
+      addPendingNotification: async (notification: PendingNotification) => {
         try {
           const { pendingNotifications } = get();
           const updated = [...pendingNotifications, notification];
@@ -155,7 +171,7 @@ export const useOfflineStore = create(
           await AsyncStorage.setItem(CACHE_KEYS.PENDING_NOTIFICATIONS, JSON.stringify(updated));
           set({ pendingNotifications: updated });
         } catch (error) {
-          console.error('Failed to add pending notification:', error);
+          logger.error('Failed to add pending notification:', error);
         }
       },
     } as OfflineActions)

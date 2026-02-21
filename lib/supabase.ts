@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 
 import * as AuthSession from 'expo-auth-session';
 import { ENV } from '../utils/env';
+import { logger } from '../utils/logger';
 
 // Lazy initialization to prevent crashes on app start
 let supabaseInstance: SupabaseClient | null = null;
@@ -20,9 +21,9 @@ function getSupabaseClient(): SupabaseClient {
     const supabaseAnonKey = ENV.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bHlva2V0ZnN0Y3NqeWx2ZnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NDI2OTAsImV4cCI6MjA3MzAxODY5MH0.hIpD_IyAxCHs2JLzUUIGL9wVwzZw-QRV2ca_ZEfyaLI';
 
     if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('❌ CRITICAL: Supabase credentials are missing!');
-      console.error('supabaseUrl:', supabaseUrl ? 'present' : 'MISSING');
-      console.error('supabaseAnonKey:', supabaseAnonKey ? 'present' : 'MISSING');
+      logger.error('❌ CRITICAL: Supabase credentials are missing!');
+      logger.error('supabaseUrl:', supabaseUrl ? 'present' : 'MISSING');
+      logger.error('supabaseAnonKey:', supabaseAnonKey ? 'present' : 'MISSING');
       // Continue anyway with fallback values
     }
 
@@ -35,10 +36,10 @@ function getSupabaseClient(): SupabaseClient {
       },
     });
 
-    console.log('✅ Supabase client created successfully');
+    logger.log('✅ Supabase client created successfully');
     return supabaseInstance;
   } catch (error) {
-    console.error('❌ Failed to create Supabase client:', error);
+    logger.error('❌ Failed to create Supabase client:', error);
     // Create a minimal client with fallback values to prevent crashes
     try {
       supabaseInstance = createClient(
@@ -53,10 +54,10 @@ function getSupabaseClient(): SupabaseClient {
           },
         }
       );
-      console.log('✅ Supabase client created with fallback values');
+      logger.log('✅ Supabase client created with fallback values');
       return supabaseInstance;
     } catch (fallbackError) {
-      console.error('❌ Failed to create fallback Supabase client:', fallbackError);
+      logger.error('❌ Failed to create fallback Supabase client:', fallbackError);
       // This should never happen, but if it does, we'll handle it in the Proxy
       throw fallbackError;
     }
@@ -71,11 +72,11 @@ export const supabase = new Proxy({} as SupabaseClient, {
       const value = client[prop as keyof SupabaseClient];
       // If it's a function, wrap it to catch errors
       if (typeof value === 'function') {
-        return (...args: any[]) => {
+        return (...args: unknown[]) => {
           try {
             return value.apply(client, args);
           } catch (error) {
-            console.error(`❌ Error calling supabase.${String(prop)}:`, error);
+            logger.error(`❌ Error calling supabase.${String(prop)}:`, error);
             // Return a safe default based on the function
             if (String(prop).includes('query') || String(prop).includes('select')) {
               return Promise.resolve({ data: null, error: null });
@@ -86,7 +87,7 @@ export const supabase = new Proxy({} as SupabaseClient, {
       }
       return value;
     } catch (error) {
-      console.error(`❌ Error accessing supabase.${String(prop)}:`, error);
+      logger.error(`❌ Error accessing supabase.${String(prop)}:`, error);
       // Return safe defaults
       if (typeof prop === 'string' && (prop.includes('query') || prop.includes('select'))) {
         return () => Promise.resolve({ data: null, error: null });
@@ -104,10 +105,10 @@ export const getRedirectUrl = (deepLink?: string) => {
   
   // Validate Supabase URL
   if (!supabaseUrl.includes('ztlyoketfstcsjylvfyq.supabase.co')) {
-    console.error('❌ WARNING: Supabase URL might be incorrect!');
-    console.error('   Expected: ztlyoketfstcsjylvfyq.supabase.co');
-    console.error('   Got:', supabaseUrl);
-    console.error('   Please check Supabase Dashboard → Authentication → URL Configuration');
+    logger.error('❌ WARNING: Supabase URL might be incorrect!');
+    logger.error('   Expected: ztlyoketfstcsjylvfyq.supabase.co');
+    logger.error('   Got:', supabaseUrl);
+    logger.error('   Please check Supabase Dashboard → Authentication → URL Configuration');
   }
   
   // Ensure URL has protocol
@@ -121,9 +122,9 @@ export const getRedirectUrl = (deepLink?: string) => {
   }
   
   // Debug log
-  console.log('🔗 Redirect URL (Supabase callback):', redirectTo);
+  logger.log('🔗 Redirect URL (Supabase callback):', redirectTo);
   if (deepLink) {
-    console.log('ℹ️ Supabase will redirect to deep link after OAuth:', deepLink);
+    logger.log('ℹ️ Supabase will redirect to deep link after OAuth:', deepLink);
   }
   
   return redirectTo;
@@ -146,8 +147,8 @@ export const getDeepLink = () => {
     ? redirectUri 
     : 'tracksy://auth/callback';
   
-  console.log('🔗 Deep link (app redirect):', deepLink);
-  console.log('ℹ️ Using tracksy://auth/callback for OAuth (production-ready)');
+  logger.log('🔗 Deep link (app redirect):', deepLink);
+  logger.log('ℹ️ Using tracksy://auth/callback for OAuth (production-ready)');
   
   return deepLink;
 };

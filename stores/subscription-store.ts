@@ -17,7 +17,7 @@ type SubscriptionState = {
 export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
   const updateFromCustomerInfo = async (customerInfo: CustomerInfo | null) => {
     const prevIsPremium = get().isPremium;
-    const isPremium = !!customerInfo?.entitlements.active.premium;
+    const isPremium = !!customerInfo?.entitlements?.active?.premium;
 
     set({
       customerInfo,
@@ -39,7 +39,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
         }
 
         await supabase
-          .from('profiles')
+          .from('user_profiles')
           .update({ is_premium: isPremium })
           .eq('id', user.id);
       } catch (error) {

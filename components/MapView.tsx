@@ -5,13 +5,14 @@ import * as Location from 'expo-location';
 import Mapbox, { MapView as MapboxMapView, Camera, ShapeSource, LineLayer, SymbolLayer, PointAnnotation, MarkerView } from '@rnmapbox/maps';
 import { useSectorStore } from '@/stores/sector-store';
 import { ENV } from '@/utils/env';
+import { logger } from '@/utils/logger';
 
 // Initialize Mapbox token immediately - before any component renders
 if (ENV.mapboxToken) {
-  console.log('🗺️ Initializing Mapbox with token:', ENV.mapboxToken.substring(0, 20) + '...');
+  logger.log('🗺️ Initializing Mapbox with token:', ENV.mapboxToken.substring(0, 20) + '...');
   Mapbox.setAccessToken(ENV.mapboxToken);
 } else {
-  console.error('❌ Mapbox token is missing!');
+  logger.error('❌ Mapbox token is missing!');
 }
 
 interface MapViewComponentProps {
@@ -32,7 +33,7 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
 
   // Convert store sectors to GeoJSON features for routes
   const sectorGeoJSON = useMemo(() => {
-    const features: any[] = [];
+    const features: { type: 'Feature'; id: string; properties: Record<string, unknown>; geometry: { type: 'LineString'; coordinates: number[][] } }[] = [];
     
     storeSectors.forEach(sector => {
       // Only include routes that have valid curved paths (3+ points)
@@ -180,11 +181,11 @@ export const MapViewComponent: React.FC<MapViewComponentProps> = ({ location }) 
         style={styles.map}
         styleURL="mapbox://styles/mapbox/dark-v11"
         onDidFinishLoadingMap={() => {
-          console.log('✅ Map loaded successfully');
+          logger.log('✅ Map loaded successfully');
           setMapReady(true);
         }}
         onDidFailLoadingMap={(error) => {
-          console.error('❌ Map failed to load:', error);
+          logger.error('❌ Map failed to load:', error);
         }}
         onPress={handleMapPress}
         logoEnabled={false}
